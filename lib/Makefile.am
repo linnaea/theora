@@ -5,17 +5,8 @@ AM_CFLAGS = $(OGG_CFLAGS) $(CAIRO_CFLAGS)
 
 EXTRA_DIST = \
 	encoder_disabled.c \
-	arm/arm2gnu.pl \
-	arm/armopts.s.in \
-	arm/armcpu.c \
-	arm/armbits.h \
-	arm/armbits.s \
-	arm/armfrag.s \
-	arm/armidct.s \
-	arm/armint.h \
-	arm/armenc.h \
-	arm/armencfrag.s \
-	arm/armenquant.s \
+	arm-intrinsics/armint.h \
+	arm-intrinsics/armenc.h \
 	c64x/c64xint.h \
 	c64x/c64xdec.h \
 	x86/mmxfrag.c \
@@ -67,26 +58,12 @@ encoder_shared_x86_sources = \
 encoder_shared_x86_64_sources =
 
 encoder_uniq_arm_sources = \
-	armencfrag-gnu.S \
-	armenquant-gnu.S \
-	arm/armenc.c
-
-if CPU_arm
-BUILT_SOURCES = \
-	armbits-gnu.S \
-	armfrag-gnu.S \
-	armidct-gnu.S \
-	armloop-gnu.S \
-	armopts-gnu.S
-endif
+	arm-intrinsics/armencfrag.c \
+	arm-intrinsics/armenc.c
 
 encoder_shared_arm_sources = \
-	armbits-gnu.S \
-	armfrag-gnu.S \
-	armidct-gnu.S \
-	armloop-gnu.S \
-	arm/armcpu.c \
-	arm/armstate.c
+	arm-intrinsics/armcpu.c \
+	arm-intrinsics/armstate.c
 
 if CPU_x86_64
 encoder_uniq_arch_sources = \
@@ -105,10 +82,10 @@ encoder_shared_arch_sources = $(encoder_shared_x86_sources)
 nodist_encoder_shared_arch_sources =
 else
 if CPU_arm
-encoder_uniq_arch_sources =
-nodist_encoder_uniq_arch_sources = $(encoder_uniq_arm_sources)
-encoder_shared_arch_sources =
-nodist_encoder_shared_arch_sources = $(encoder_shared_arm_sources)
+encoder_uniq_arch_sources = $(encoder_uniq_arm_sources)
+nodist_encoder_uniq_arch_sources =
+encoder_shared_arch_sources = $(encoder_shared_arm_sources)
+nodist_encoder_shared_arch_sources =
 else
 encoder_uniq_arch_sources =
 nodist_encoder_uniq_arch_sources =
@@ -139,6 +116,7 @@ encoder_sources = \
 	dequant.c \
 	fragment.c \
 	idct.c \
+	info.c \
 	internal.c \
 	state.c \
 	quant.c \
@@ -160,14 +138,8 @@ decoder_x86_sources = \
 	x86/x86state.c
 
 decoder_arm_sources = \
-	arm/armcpu.c \
-	arm/armstate.c
-
-nodist_decoder_arm_sources = \
-	armbits-gnu.S \
-	armfrag-gnu.S \
-	armidct-gnu.S \
-	armloop-gnu.S
+	arm-intrinsics/armcpu.c \
+	arm-intrinsics/armstate.c
 
 decoder_c64x_sources = \
 	c64x/c64xdec.c \
@@ -231,7 +203,7 @@ noinst_HEADERS = \
 	ocintrin.h \
 	quant.h \
 	state.h \
-	arm/armcpu.h \
+	arm-intrinsics/armcpu.h \
 	c64x/c64xdec.h \
 	c64x/c64xint.h \
 	x86/mmxloop.h \
@@ -260,7 +232,6 @@ libtheoraenc_la_LDFLAGS = \
   -version-info @THENC_LIB_CURRENT@:@THENC_LIB_REVISION@:@THENC_LIB_AGE@ \
   @THEORAENC_LDFLAGS@ $(OGG_LIBS) \
   -no-undefined
-libtheoraenc_la_LIBADD = libtheoradec.la
 
 libtheora_la_SOURCES = \
 	$(decoder_sources) \
@@ -283,26 +254,3 @@ profile:
 # contstruct various symbol export list files
 .def.exp : defexp.awk
 	awk -f defexp.awk $< > $@
-
-CLEANFILES = \
-	armbits-gnu.S \
-	armfrag-gnu.S \
-	armidct-gnu.S \
-	armloop-gnu.S \
-	armopts-gnu.S \
-	armencfrag-gnu.S \
-	armenquant-gnu.S
-
-# automake doesn't do dependency tracking for asm files, that I can tell
-armfrag-gnu.S: armopts-gnu.S
-armidct-gnu.S: armopts-gnu.S
-armloop-gnu.S: armopts-gnu.S
-armencfrag-gnu.S: armopts-gnu.S
-armenquant-gnu.S: armopts-gnu.S
-
-# convert ARM asm to GNU as format
-%-gnu.S: $(srcdir)/arm/%.s
-	$(srcdir)/arm/arm2gnu.pl < $< > $@
-# Special case for armopts.s, because it is built by configure
-armopts-gnu.S: arm/armopts.s
-	$(srcdir)/arm/arm2gnu.pl < $< > $@

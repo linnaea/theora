@@ -219,21 +219,13 @@ if test "x${ac_enable_asm}" = xyes; then
     AC_DEFINE([OC_X86_ASM], [],  [make use of x86 asm optimization])
     AC_DEFINE([OC_X86_64_ASM], [],  [make use of x86_64 asm optimization])
     ;;
-  arm*)
+  arm*|aarch*)
     cpu_arm=yes
     cpu_optimization="ARM"
     AC_DEFINE([OC_ARM_ASM], [],  [make use of arm asm optimization])
     AC_ARG_ENABLE(asflag-probe,
         AS_HELP_STRING([--disable-asflag-probe], [Disable instructions not supported by the default ASFLAGS (ARM only).]),
         [ ac_enable_asflag_probe=$enableval ], [ ac_enable_asflag_probe=yes] )
-
-    dnl our ARM assembly requires perl to run the arm2gnu reformatter
-    AC_CHECK_PROG([HAVE_PERL], perl, yes, no)
-    if test "x$HAVE_PERL" = "xno"; then
-      AC_MSG_WARN([*** ARM assembly requires perl -- disabling optimizations])
-      cpu_arm=no
-      cpu_optimization="(missing perl dependency for ARM)"
-    fi
 
     dnl AC_TRY_ASSEMBLE uses CFLAGS instead of CCASFLAGS
     save_CFLAGS="$CFLAGS"

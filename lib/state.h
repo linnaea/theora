@@ -53,7 +53,7 @@ typedef struct oc_theora_state          oc_theora_state;
 #  endif
 # endif
 # if defined(OC_ARM_ASM)
-#  include "arm/armint.h"
+#  include "arm-intrinsics/armint.h"
 # endif
 # if defined(OC_C64X_ASM)
 #  include "c64x/c64xint.h"

@@ -52,7 +52,7 @@ typedef struct oc_token_checkpoint    oc_token_checkpoint;
 #  endif
 # endif
 # if defined(OC_ARM_ASM)
-#  include "arm/armenc.h"
+#  include "arm-intrinsics/armenc.h"
 # endif
 
 # if !defined(oc_enc_accel_init)

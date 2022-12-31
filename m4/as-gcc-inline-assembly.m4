@@ -57,10 +57,7 @@ rm -rf conftest*])
 
 AC_DEFUN([AS_ASM_ARM_NEON],
 [
-  AC_MSG_CHECKING([if assembler supports NEON instructions on ARM])
-
-  AC_TRY_ASSEMBLE([vorr d0,d0,d0], [flag_ok=yes], [flag_ok=no])
-
+  AC_CHECK_DECLS([vrev32q_s16], [flag_ok=yes], [flag_ok=no], [[#include <arm_neon.h>]])
   if test "X$flag_ok" = Xyes ; then
     $1
     true
@@ -68,7 +65,6 @@ AC_DEFUN([AS_ASM_ARM_NEON],
     $2
     true
   fi
-  AC_MSG_RESULT([$flag_ok])
 ])
 
 
