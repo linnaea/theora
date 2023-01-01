@@ -63,7 +63,7 @@ AC_LIBTOOL_WIN32_DLL
 AM_PROG_LIBTOOL
 
 dnl Add parameters for aclocal
-AC_SUBST(ACLOCAL_AMFLAGS, "-I m4")
+AC_CONFIG_MACRO_DIRS([m4])
 
 dnl Check for doxygen
 AC_ARG_ENABLE([doc],
@@ -212,12 +212,24 @@ if test "x${ac_enable_asm}" = xyes; then
     AC_DEFINE([OC_X86_ASM], [],  [make use of x86 asm optimization])
     AC_DEFINE([OC_X86_64_ASM], [],  [make use of x86_64 asm optimization])
     ;;
+  arm*|aarch*)
+    cpu_arm=yes
+    cpu_optimization="ARM"
+    AC_DEFINE([OC_ARM_ASM], [],  [make use of arm asm optimization])
+    AC_CHECK_DECLS([vabaq_s16], [HAVE_ARM_ASM_NEON=1], [HAVE_ARM_ASM_NEON=0], [[#include <arm_neon.h>]])
+    if test x$HAVE_ARM_ASM_NEON = x1 ; then
+      AC_DEFINE(OC_ARM_ASM_NEON, 1,
+        [Define if compiler supports NEON instructions])
+      cpu_optimization="$cpu_optimization (NEON)"
+    fi
+    ;;
   esac
 else
   cpu_optimization="disabled"
 fi
 AM_CONDITIONAL([CPU_x86_64], [test x$cpu_x86_64 = xyes])
 AM_CONDITIONAL([CPU_x86_32], [test x$cpu_x86_32 = xyes])
+AM_CONDITIONAL([CPU_arm], [test x$cpu_arm = xyes])
 
 # Test whenever ld supports -version-script
 AC_PROG_LD

@@ -20,6 +20,12 @@
 #if defined(OC_X86_ASM)
 # include "x86/x86enc.h"
 #endif
+#if defined(OC_ARM_ASM)
+# include "arm-intrinsics/armenc.h"
+#endif
+#ifndef oc_enc_vtable_init
+# define oc_enc_vtable_init oc_enc_vtable_init_c
+#endif
 
 
 
@@ -1078,11 +1084,7 @@ static int oc_enc_init(oc_enc_ctx *_enc,const th_info *_info){
   _enc->frag_satd=_ogg_calloc(_enc->state.nfrags,sizeof(*_enc->frag_satd));
   _enc->frag_ssd=_ogg_calloc(_enc->state.nfrags,sizeof(*_enc->frag_ssd));
 #endif
-#if defined(OC_X86_ASM)
-  oc_enc_vtable_init_x86(_enc);
-#else
-  oc_enc_vtable_init_c(_enc);
-#endif
+  oc_enc_vtable_init(_enc);
   _enc->keyframe_frequency_force=1<<_enc->state.info.keyframe_granule_shift;
   _enc->state.qis[0]=_enc->state.info.quality;
   _enc->state.nqis=1;

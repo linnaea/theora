@@ -21,6 +21,7 @@
 # include "x86int.h"
 
 void oc_enc_vtable_init_x86(oc_enc_ctx *_enc);
+# define oc_enc_vtable_init oc_enc_vtable_init_x86
 
 unsigned oc_enc_frag_sad_mmxext(const unsigned char *_src,
  const unsigned char *_ref,int _ystride);

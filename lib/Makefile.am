@@ -1,9 +1,13 @@
-INCLUDES = -I$(top_srcdir)/include
+AUTOMAKE_OPTIONS = subdir-objects
+
+AM_CPPFLAGS = -I$(top_srcdir)/include
 AM_CFLAGS = $(OGG_CFLAGS) $(CAIRO_CFLAGS)
 
 EXTRA_DIST = \
 	cpu.c \
 	encoder_disabled.c \
+	arm-intrinsics/armint.h \
+	arm-intrinsics/armenc.h \
 	x86/mmxencfrag.c \
 	x86/mmxfdct.c \
 	x86/sse2fdct.c \
@@ -43,6 +47,14 @@ encoder_shared_x86_sources = \
 
 encoder_shared_x86_64_sources =
 
+encoder_uniq_arm_sources = \
+	arm-intrinsics/armencfrag.c \
+	arm-intrinsics/armenc.c
+
+encoder_shared_arm_sources = \
+	arm-intrinsics/armcpu.c \
+	arm-intrinsics/armstate.c
+
 if CPU_x86_64
 encoder_uniq_arch_sources = \
  $(encoder_uniq_x86_sources) \
@@ -55,8 +67,13 @@ if CPU_x86_32
 encoder_uniq_arch_sources = $(encoder_uniq_x86_sources)
 encoder_shared_arch_sources = $(encoder_shared_x86_sources)
 else
+if CPU_arm
+encoder_uniq_arch_sources = $(encoder_uniq_arm_sources)
+encoder_shared_arch_sources = $(encoder_shared_arm_sources)
+else
 encoder_uniq_arch_sources =
 encoder_shared_arch_sources =
+endif
 endif
 endif
 
@@ -79,6 +96,7 @@ encoder_sources = \
 	apiwrapper.c \
 	fragment.c \
 	idct.c \
+	info.c \
 	internal.c \
 	state.c \
 	quant.c \
@@ -92,13 +110,22 @@ decoder_x86_sources = \
 	x86/mmxfrag.c \
 	x86/mmxstate.c \
 	x86/x86state.c
+
+decoder_arm_sources = \
+	arm-intrinsics/armcpu.c \
+	arm-intrinsics/armstate.c
+
 if CPU_x86_64
 decoder_arch_sources = $(decoder_x86_sources)
 else
 if CPU_x86_32
 decoder_arch_sources = $(decoder_x86_sources)
 else
+if CPU_arm
+decoder_arch_sources = $(decoder_arm_sources)
+else
 decoder_arch_sources =
+endif
 endif
 endif
 
@@ -136,6 +163,7 @@ noinst_HEADERS = \
 	huffman.h \
 	ocintrin.h \
 	quant.h \
+	arm-intrinsics/armcpu.h \
 	x86/mmxfrag.h \
 	x86/mmxloop.h \
 	x86/x86int.h
@@ -155,7 +183,6 @@ libtheoraenc_la_LDFLAGS = \
   -version-info @THENC_LIB_CURRENT@:@THENC_LIB_REVISION@:@THENC_LIB_AGE@ \
   @THEORAENC_LDFLAGS@ $(OGG_LIBS) \
   -no-undefined
-libtheoraenc_la_LIBADD = libtheoradec.la
 
 libtheora_la_SOURCES = \
 	$(decoder_sources) \

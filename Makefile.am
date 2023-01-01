@@ -1,6 +1,7 @@
 ## Process this file with automake to produce Makefile.in
 
 AUTOMAKE_OPTIONS = foreign 1.11 dist-zip dist-xz
+ACLOCAL_AMFLAGS = -I m4
 
 if THEORA_ENABLE_EXAMPLES
 EXAMPLES_DIR = examples

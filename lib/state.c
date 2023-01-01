@@ -25,10 +25,17 @@
 # include "x86/x86int.h"
 #endif
 #endif
+#if defined(OC_ARM_ASM)
+# include "arm-intrinsics/armint.h"
+#endif
 #if defined(OC_DUMP_IMAGES)
 # include <stdio.h>
 # include "png.h"
 #endif
+#ifndef oc_state_vtable_init
+# define oc_state_vtable_init oc_state_vtable_init_c
+#endif
+
 
 /*Returns the fragment index of the top-left block in a macro block.
   This can be used to test whether or not the whole macro block is valid.
@@ -602,15 +609,6 @@ void oc_state_vtable_init_c(oc_theora_state *_state){
    oc_state_loop_filter_frag_rows_c;
   _state->opt_vtable.restore_fpu=oc_restore_fpu_c;
   _state->opt_data.dct_fzig_zag=OC_FZIG_ZAG;
-}
-
-/*Initialize the accelerated function pointers.*/
-void oc_state_vtable_init(oc_theora_state *_state){
-#if defined(OC_X86_ASM)
-  oc_state_vtable_init_x86(_state);
-#else
-  oc_state_vtable_init_c(_state);
-#endif
 }
 
 

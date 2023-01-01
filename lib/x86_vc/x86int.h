@@ -20,6 +20,7 @@
 # include "../internal.h"
 
 void oc_state_vtable_init_x86(oc_theora_state *_state);
+# define oc_state_vtable_init oc_state_vtable_init_x86
 
 void oc_frag_copy_mmx(unsigned char *_dst,
  const unsigned char *_src,int _ystride);
