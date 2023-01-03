@@ -232,3 +232,22 @@ unsigned oc_enc_frag_ssd_neon(const unsigned char *_src,
 
     return vaddvq_u32(buf[0]);
 }
+
+void oc_enc_frag_copy2_neon(unsigned char *_dst,const unsigned char *_src1,const unsigned char *_src2,int _ystride) {
+  for (int i = 0; i < 8; i++)
+    vst1_u8(&_dst[i * _ystride],
+            vhadd_u8(vld1_u8(&_src1[i * _ystride]),
+                     vld1_u8(&_src2[i * _ystride])));
+}
+
+void oc_enc_frag_sub_neon(int16_t _diff[64],const unsigned char *_src,const unsigned char *_ref,int _ystride) {
+  for (int i = 0; i < 8; i++)
+    vst1q_s16(&_diff[i * 8],
+              vreinterpretq_s16_u16(vsubl_u8(vld1_u8(&_src[i * _ystride]), vld1_u8(&_ref[i * _ystride]))));
+}
+
+void oc_enc_frag_sub_128_neon(int16_t _diff[64],const unsigned char *_src,int _ystride) {
+  for (int i = 0; i < 8; i++)
+    vst1q_s16(&_diff[i * 8],
+              vreinterpretq_s16_u16(vsubl_u8(vld1_u8(&_src[i * _ystride]), vdup_n_u8(128))));
+}

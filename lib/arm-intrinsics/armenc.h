@@ -29,6 +29,12 @@
 #   define oc_enc_frag_sad_thresh(_enc,_src,_ref,_ystride,_thresh) oc_enc_frag_sad_neon(_src,_ref,_ystride)
 #   define oc_enc_frag_sad2_thresh(_enc,...) oc_enc_frag_sad2_thresh_neon(__VA_ARGS__)
 #   define oc_enc_frag_ssd(_enc,...) oc_enc_frag_ssd_neon(__VA_ARGS__)
+#   define oc_enc_frag_copy2(_enc,...) oc_enc_frag_copy2_neon(__VA_ARGS__)
+#   define oc_enc_frag_sub(_enc,...) oc_enc_frag_sub_neon(__VA_ARGS__)
+#   define oc_enc_frag_sub_128(_enc,...) oc_enc_frag_sub_128_neon(__VA_ARGS__)
+
+#   define oc_enc_frag_recon_intra(_enc,...) oc_frag_recon_intra_neon(__VA_ARGS__)
+#   define oc_enc_frag_recon_inter(_enc,...) oc_frag_recon_inter_neon(__VA_ARGS__)
 #  else
 #   define OC_ENC_USE_VTABLE (1)
 #  endif
@@ -55,6 +61,9 @@ unsigned oc_enc_frag_sad2_thresh_neon(const unsigned char *_src,
                                       int _ystride, unsigned _thresh);
 unsigned oc_enc_frag_ssd_neon(const unsigned char *_src,
                               const unsigned char *_ref,int _ystride);
+void oc_enc_frag_copy2_neon(unsigned char *_dst,const unsigned char *_src1,const unsigned char *_src2,int _ystride);
+void oc_enc_frag_sub_neon(int16_t _diff[64],const unsigned char *_src,const unsigned char *_ref,int _ystride);
+void oc_enc_frag_sub_128_neon(int16_t _diff[64],const unsigned char *_src,int _ystride);
 #  endif
 
 # endif
