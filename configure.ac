@@ -231,9 +231,7 @@ if test "x${ac_enable_asm}" = xyes; then
     save_CFLAGS="$CFLAGS"
     ARM_CCASFLAGS=
     dnl Test for instruction set support with the default CCASFLAGS.
-    AS_ASM_ARM_NEON([HAVE_ARM_ASM_NEON=1],[HAVE_ARM_ASM_NEON=0])
-    AS_ASM_ARM_MEDIA([HAVE_ARM_ASM_MEDIA=1],[HAVE_ARM_ASM_MEDIA=0])
-    AS_ASM_ARM_EDSP([HAVE_ARM_ASM_EDSP=1],[HAVE_ARM_ASM_EDSP=0])
+    AC_CHECK_DECLS([vabal_u8], [HAVE_ARM_ASM_NEON=1], [HAVE_ARM_ASM_NEON=0], [[#include <arm_neon.h>]])
     dnl gas will not assemble instructions unless the architecture explicitly
     dnl  supports it (unlike on x86).
     dnl Try to speculatively add ASFLAGS to enable usage of these instructions
@@ -249,57 +247,20 @@ if test "x${ac_enable_asm}" = xyes; then
         AC_MSG_NOTICE([trying custom CCASFLAGS to enable NEON instructions...])
         ARM_CCASFLAGS="-mfpu=neon -march=armv7-a"
         CFLAGS="$save_CFLAGS $ARM_CCASFLAGS"
-        AS_ASM_ARM_NEON([HAVE_ARM_ASM_NEON=1],[HAVE_ARM_ASM_NEON=0])
+        AC_CHECK_DECLS([vabal_u8], [HAVE_ARM_ASM_NEON=1], [HAVE_ARM_ASM_NEON=0], [[#include <arm_neon.h>]])
         if test x$HAVE_ARM_ASM_NEON != x1 ; then
-          ARM_CCASFLAGS=
-          CFLAGS="$save_CFLAGS"
-        fi
-      fi
-      if test x$HAVE_ARM_ASM_MEDIA != x1 ; then
-        dnl Try to set some flags to enable ARMv6 media instructions.
-        AC_MSG_NOTICE([trying custom CCASFLAGS to enable ARMv6 media instructions...])
-        ARM_CCASFLAGS="-march=armv6j"
-        CFLAGS="$save_CFLAGS $ARM_CCASFLAGS"
-        AS_ASM_ARM_MEDIA([HAVE_ARM_ASM_MEDIA=1],[HAVE_ARM_ASM_MEDIA=0])
-        if test x$HAVE_ARM_ASM_MEDIA != x1 ; then
-          ARM_CCASFLAGS=
-          CFLAGS="$save_CFLAGS"
-        fi
-      fi
-      if test x$HAVE_ARM_ASM_EDSP != x1 ; then
-        dnl Try to set some flags to enable EDSP instructions.
-        AC_MSG_NOTICE([trying custom CCASFLAGS to enable EDSP compilation...])
-        ARM_CCASFLAGS="-march=armv5e"
-        CFLAGS="$save_CFLAGS $ARM_CCASFLAGS"
-        AS_ASM_ARM_EDSP([HAVE_ARM_ASM_EDSP=1],[HAVE_ARM_ASM_EDSP=0])
-        if test x$HAVE_ARM_ASM_MEDIA != x1 ; then
           ARM_CCASFLAGS=
           CFLAGS="$save_CFLAGS"
         fi
       fi
     fi
 
-    dnl Only enable if we passed the perl test above
-    if test x$cpu_arm = xyes; then
-      if test x$HAVE_ARM_ASM_EDSP = x1 ; then
-        AC_DEFINE(OC_ARM_ASM_EDSP, 1,
-          [Define if assembler supports EDSP instructions])
-        cpu_optimization="$cpu_optimization (EDSP)"
-      fi
-      AC_SUBST(HAVE_ARM_ASM_EDSP)
-      if test x$HAVE_ARM_ASM_MEDIA = x1 ; then
-        AC_DEFINE(OC_ARM_ASM_MEDIA, 1,
-          [Define if assembler supports ARMv6 media instructions])
-        cpu_optimization="$cpu_optimization (Media)"
-      fi
-      AC_SUBST(HAVE_ARM_ASM_MEDIA)
-      if test x$HAVE_ARM_ASM_NEON = x1 ; then
-        AC_DEFINE(OC_ARM_ASM_NEON, 1,
-          [Define if compiler supports NEON instructions])
-        cpu_optimization="$cpu_optimization (NEON)"
-      fi
-      AC_SUBST(HAVE_ARM_ASM_NEON)
+    if test x$HAVE_ARM_ASM_NEON = x1 ; then
+      AC_DEFINE(OC_ARM_ASM_NEON, 1,
+        [Define if compiler supports NEON instructions])
+      cpu_optimization="$cpu_optimization (NEON)"
     fi
+    AC_SUBST(HAVE_ARM_ASM_NEON)
 
     CFLAGS="$save_CFLAGS"
     CCASFLAGS="$CCASFLAGS $ARM_CCASFLAGS"
@@ -528,10 +489,10 @@ AM_CONDITIONAL(THEORA_DISABLE_ENCODE, [test "x${ac_enable_encode}" != xyes])
 
 dnl Configuration option for examples
 
-ac_enable_examples=yes
+ac_enable_examples=no
 AC_ARG_ENABLE(examples,
-     AS_HELP_STRING([--disable-examples], [Disable examples]),
-     [ ac_enable_examples=$enableval ], [ ac_enable_examples=yes] )
+     AS_HELP_STRING([--enable-examples], [Disable examples]),
+     [ ac_enable_examples=$enableval ], [ ac_enable_examples=no] )
 AM_CONDITIONAL(THEORA_ENABLE_EXAMPLES, [test "x${ac_enable_examples}" != xno])
 
 dnl --------------------------------------------------
@@ -581,7 +542,6 @@ AC_SUBST(PROFILE)
 AC_CONFIG_FILES([
   Makefile 
   lib/Makefile
-  lib/arm/armopts.s
   include/Makefile include/theora/Makefile
   examples/Makefile
   doc/Makefile doc/Doxyfile doc/spec/Makefile

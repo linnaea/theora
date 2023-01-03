@@ -21,6 +21,7 @@
 # if defined(OC_ARM_ASM)
 #  define oc_enc_accel_init oc_enc_accel_init_arm
 #  ifdef __aarch64__
+// Not required by spec, but practically everyone implements NEON so don't bother with vtable.
 #   define oc_enc_frag_satd(_enc,...) oc_enc_frag_satd_neon(__VA_ARGS__)
 #   define oc_enc_frag_satd2(_enc,...) oc_enc_frag_satd2_neon(__VA_ARGS__)
 #   define oc_enc_frag_intra_satd(_enc,...) oc_enc_frag_intra_satd_neon(__VA_ARGS__)

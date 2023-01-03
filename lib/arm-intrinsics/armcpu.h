@@ -18,10 +18,6 @@
 # define _arm_armcpu_H (1)
 #include "../internal.h"
 
-/*"Parallel instructions" from ARM v6 and above.*/
-#define OC_CPU_ARM_MEDIA    (1<<24)
-/*Flags chosen to match arch/arm/include/asm/hwcap.h in the Linux kernel.*/
-#define OC_CPU_ARM_EDSP     (1<<7)
 #define OC_CPU_ARM_NEON     (1<<12)
 
 ogg_uint32_t oc_cpu_flags_get(void);
