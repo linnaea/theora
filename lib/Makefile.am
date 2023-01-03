@@ -5,8 +5,10 @@ AM_CFLAGS = $(OGG_CFLAGS) $(CAIRO_CFLAGS)
 
 EXTRA_DIST = \
 	encoder_disabled.c \
-	arm-intrinsics/armint.h \
+	arm-intrinsics/armbits.h \
+	arm-intrinsics/armcpu.h \
 	arm-intrinsics/armenc.h \
+	arm-intrinsics/armint.h \
 	c64x/c64xint.h \
 	c64x/c64xdec.h \
 	x86/mmxfrag.c \
@@ -63,34 +65,27 @@ encoder_uniq_arm_sources = \
 
 encoder_shared_arm_sources = \
 	arm-intrinsics/armcpu.c \
+	arm-intrinsics/armfrag.c \
 	arm-intrinsics/armstate.c
 
 if CPU_x86_64
 encoder_uniq_arch_sources = \
  $(encoder_uniq_x86_sources) \
  $(encoder_uniq_x86_64_sources)
-nodist_encoder_uniq_arch_sources =
 encoder_shared_arch_sources = \
  $(encoder_shared_x86_sources) \
  $(encoder_shared_x86_64_sources)
-nodist_encoder_shared_arch_sources =
 else
 if CPU_x86_32
 encoder_uniq_arch_sources = $(encoder_uniq_x86_sources)
-nodist_encoder_uniq_arch_sources =
 encoder_shared_arch_sources = $(encoder_shared_x86_sources)
-nodist_encoder_shared_arch_sources =
 else
 if CPU_arm
 encoder_uniq_arch_sources = $(encoder_uniq_arm_sources)
-nodist_encoder_uniq_arch_sources =
 encoder_shared_arch_sources = $(encoder_shared_arm_sources)
-nodist_encoder_shared_arch_sources =
 else
 encoder_uniq_arch_sources =
-nodist_encoder_uniq_arch_sources =
 encoder_shared_arch_sources =
-nodist_encoder_shared_arch_sources =
 endif
 endif
 endif
@@ -123,10 +118,6 @@ encoder_sources = \
 	$(encoder_shared_arch_sources) \
 	$(encoder_uniq_sources)
 
-nodist_encoder_arch_sources = \
-	$(nodist_encoder_shared_arch_sources) \
-	$(nodist_encoder_uniq_arch_sources)
-
 endif
 
 decoder_x86_sources = \
@@ -139,6 +130,7 @@ decoder_x86_sources = \
 
 decoder_arm_sources = \
 	arm-intrinsics/armcpu.c \
+	arm-intrinsics/armfrag.c \
 	arm-intrinsics/armstate.c
 
 decoder_c64x_sources = \
@@ -149,22 +141,17 @@ decoder_c64x_sources = \
 
 if CPU_x86_64
 decoder_arch_sources = $(decoder_x86_sources)
-nodist_decoder_arch_sources =
 else
 if CPU_x86_32
 decoder_arch_sources = $(decoder_x86_sources)
-nodist_decoder_arch_sources =
 else
 if CPU_arm
 decoder_arch_sources = $(decoder_arm_sources)
-nodist_decoder_arch_sources = $(nodist_decoder_arm_sources)
 else
 if CPU_c64x
 decoder_arch_sources = $(decoder_c64x_sources)
-nodist_decoder_arch_sources =
 else
 decoder_arch_sources =
-nodist_decoder_arch_sources =
 endif
 endif
 endif
@@ -216,8 +203,6 @@ noinst_HEADERS = \
 libtheoradec_la_SOURCES = \
 	$(decoder_sources) \
 	Version_script-dec theoradec.exp
-nodist_libtheoradec_la_SOURCES = \
-	$(nodist_decoder_arch_sources)
 libtheoradec_la_LDFLAGS = \
   -version-info @THDEC_LIB_CURRENT@:@THDEC_LIB_REVISION@:@THDEC_LIB_AGE@ \
   @THEORADEC_LDFLAGS@ @CAIRO_LIBS@ \
@@ -226,8 +211,6 @@ libtheoradec_la_LDFLAGS = \
 libtheoraenc_la_SOURCES = \
 	$(encoder_sources) \
 	Version_script-enc theoraenc.exp
-nodist_libtheoraenc_la_SOURCES = \
-	$(nodist_encoder_arch_sources)
 libtheoraenc_la_LDFLAGS = \
   -version-info @THENC_LIB_CURRENT@:@THENC_LIB_REVISION@:@THENC_LIB_AGE@ \
   @THEORAENC_LDFLAGS@ $(OGG_LIBS) \
@@ -237,9 +220,6 @@ libtheora_la_SOURCES = \
 	$(decoder_sources) \
 	$(encoder_uniq_sources) \
 	Version_script theora.exp
-nodist_libtheora_la_SOURCES = \
-	$(nodist_decoder_arch_sources) \
-	$(nodist_encoder_uniq_arch_sources)
 libtheora_la_LDFLAGS = \
   -version-info @TH_LIB_CURRENT@:@TH_LIB_REVISION@:@TH_LIB_AGE@ \
   @THEORA_LDFLAGS@ @CAIRO_LIBS@ $(OGG_LIBS) \

@@ -23,7 +23,7 @@ void oc_enc_accel_init_arm(oc_enc_ctx *_enc){
   cpu_flags=_enc->state.cpu_flags;
   oc_enc_accel_init_c(_enc);
 # if defined(OC_ARM_ASM_NEON)
-  if(cpu_flags&OC_CPU_ARM_NEON){
+  if(cpu_flags & OC_CPU_ARM_NEON){
 #  if defined(OC_ENC_USE_VTABLE)
     _enc->opt_vtable.frag_satd=oc_enc_frag_satd_neon;
     _enc->opt_vtable.frag_satd2=oc_enc_frag_satd2_neon;
@@ -36,15 +36,6 @@ void oc_enc_accel_init_arm(oc_enc_ctx *_enc){
     _enc->opt_data.enquant_table_size=128*sizeof(ogg_uint16_t);
     _enc->opt_data.enquant_table_alignment=16;
   }
-# endif
-
-# if defined(OC_ARM_ASM_EDSP)
-  if(cpu_flags&OC_CPU_ARM_EDSP){
-  }
-#  if defined(OC_ARM_ASM_MEDIA)
-  if(cpu_flags&OC_CPU_ARM_MEDIA){
-  }
-#  endif
 # endif
 }
 #endif

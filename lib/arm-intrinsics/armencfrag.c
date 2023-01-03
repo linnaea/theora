@@ -160,9 +160,9 @@ unsigned oc_enc_frag_satd2_neon(int *_dc,const unsigned char *_src,
                                 const unsigned char *_ref1,const unsigned char *_ref2,int _ystride){
     int16x8_t buf[8];
     for (int i = 0; i < 8; i++)
-        buf[i] = vreinterpretq_s16_u16(vsubq_u16(
-                vmovl_u8(vld1_u8(&_src[i*_ystride])),
-                vshrq_n_u16(vaddl_u8(vld1_u8(&_ref1[i*_ystride]), vld1_u8(&_ref2[i*_ystride])), 1)));
+        buf[i] = vreinterpretq_s16_u16(vsubl_u8(
+                vld1_u8(&_src[i*_ystride]),
+                vhadd_u8(vld1_u8(&_ref1[i*_ystride]), vld1_u8(&_ref2[i*_ystride]))));
 
     return oc_hadamard_satd_neon_8x8(_dc,buf);
 }
@@ -200,9 +200,9 @@ unsigned oc_enc_frag_sad2_thresh_neon(const unsigned char *_src,
     uint16x8_t a;
 
     for(int i = 0; i < 8; i++) {
-        uint16x8_t src = vmovl_u8(vld1_u8(&_src[i * _ystride]));
-        uint16x8_t ref = vshrq_n_u16(vaddl_u8(vld1_u8(&_ref1[i * _ystride]), vld1_u8(&_ref2[i * _ystride])), 1);
-        a = i ? vabaq_u16(a, src, ref) : vabdq_u16(src, ref);
+        uint8x8_t src = vld1_u8(&_src[i * _ystride]);
+        uint8x8_t ref = vhadd_u8(vld1_u8(&_ref1[i * _ystride]), vld1_u8(&_ref2[i * _ystride]));
+        a = i ? vabal_u8(a, src, ref) : vabdl_u8(src, ref);
     }
 
     return vaddlvq_u16(a);
@@ -213,8 +213,8 @@ unsigned oc_enc_frag_ssd_neon(const unsigned char *_src,
     uint32x4_t buf[8];
 
     for(int i=0;i<8;i++){
-        uint8x8_t src = (vld1_u8(&_src[i * _ystride]));
-        uint8x8_t ref = (vld1_u8(&_ref[i * _ystride]));
+        uint8x8_t src = vld1_u8(&_src[i * _ystride]);
+        uint8x8_t ref = vld1_u8(&_ref[i * _ystride]);
         uint8x8_t dif = vabd_u8(src, ref);
         uint16x8_t squ = vmull_u8(dif, dif);
         buf[i] = vpaddlq_u16(squ);
