@@ -955,8 +955,6 @@ void oc_enc_accel_init_c(oc_enc_ctx *_enc){
   _enc->opt_vtable.enquant_table_init=oc_enc_enquant_table_init_c;
   _enc->opt_vtable.enquant_table_fixup=oc_enc_enquant_table_fixup_c;
   _enc->opt_vtable.quantize=oc_enc_quantize_c;
-  _enc->opt_vtable.frag_recon_intra=oc_frag_recon_intra_c;
-  _enc->opt_vtable.frag_recon_inter=oc_frag_recon_inter_c;
   _enc->opt_vtable.fdct8x8=oc_enc_fdct8x8_c;
 # endif
   _enc->opt_data.enquant_table_size=64*sizeof(oc_iquant);

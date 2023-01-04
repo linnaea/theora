@@ -54,10 +54,6 @@
   oc_enc_enquant_table_fixup_x86(_enquant,_nqis)
 #  define oc_enc_quantize(_enc,_qdct,_dct,_dequant,_enquant) \
   oc_enc_quantize_sse2(_qdct,_dct,_dequant,_enquant)
-#   define oc_enc_frag_recon_intra(_enc,_dst,_ystride,_residue) \
-  oc_frag_recon_intra_mmx(_dst,_ystride,_residue)
-#   define oc_enc_frag_recon_inter(_enc,_dst,_src,_ystride,_residue) \
-  oc_frag_recon_inter_mmx(_dst,_src,_ystride,_residue)
 #   define oc_enc_fdct8x8(_enc,_y,_x) \
   oc_enc_fdct8x8_x86_64sse2(_y,_x)
 #  else

@@ -817,9 +817,9 @@ static int oc_enc_block_transform_quantize(oc_enc_ctx *_enc,
     oc_qii_state_advance(&qs,_pipe->qs+_pli,qii);
     ac_bits+=qs.bits-_pipe->qs[_pli].bits;
   }
-  if(!qti)oc_enc_frag_recon_intra(_enc,dst,ystride,data);
+  if(!qti)oc_frag_recon_intra(&_enc->state,dst,ystride,data);
   else{
-    oc_enc_frag_recon_inter(_enc,dst,
+    oc_frag_recon_inter(&_enc->state,dst,
      nmv_offs==1?ref+mv_offs[0]:dst,ystride,data);
   }
   /*If _fr is NULL, then this is an INTRA frame, and we can't skip blocks.*/

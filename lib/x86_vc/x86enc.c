@@ -25,8 +25,6 @@ void oc_enc_accel_init_x86(oc_enc_ctx *_enc){
   if(cpu_flags&OC_CPU_X86_MMX){
     _enc->opt_vtable.frag_sub=oc_enc_frag_sub_mmx;
     _enc->opt_vtable.frag_sub_128=oc_enc_frag_sub_128_mmx;
-    _enc->opt_vtable.frag_recon_intra=oc_frag_recon_intra_mmx;
-    _enc->opt_vtable.frag_recon_inter=oc_frag_recon_inter_mmx;
   }
   if(cpu_flags&OC_CPU_X86_MMXEXT){
     _enc->opt_vtable.frag_sad=oc_enc_frag_sad_mmxext;

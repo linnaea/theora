@@ -119,14 +119,6 @@ typedef struct oc_token_checkpoint    oc_token_checkpoint;
 #   define oc_enc_quantize(_enc,_qdct,_dct,_dequant,_enquant) \
   ((*(_enc)->opt_vtable.quantize)(_qdct,_dct,_dequant,_enquant))
 #  endif
-#  if !defined(oc_enc_frag_recon_intra)
-#   define oc_enc_frag_recon_intra(_enc,_dst,_ystride,_residue) \
-  ((*(_enc)->opt_vtable.frag_recon_intra)(_dst,_ystride,_residue))
-#  endif
-#  if !defined(oc_enc_frag_recon_inter)
-#   define oc_enc_frag_recon_inter(_enc,_dst,_src,_ystride,_residue) \
-  ((*(_enc)->opt_vtable.frag_recon_inter)(_dst,_src,_ystride,_residue))
-#  endif
 #  if !defined(oc_enc_fdct8x8)
 #   define oc_enc_fdct8x8(_enc,_y,_x) \
   ((*(_enc)->opt_vtable.fdct8x8)(_y,_x))
@@ -191,14 +183,6 @@ typedef struct oc_token_checkpoint    oc_token_checkpoint;
 #  if !defined(oc_enc_quantize)
 #   define oc_enc_quantize(_enc,_qdct,_dct,_dequant,_enquant) \
   oc_enc_quantize_c(_qdct,_dct,_dequant,_enquant)
-#  endif
-#  if !defined(oc_enc_frag_recon_intra)
-#   define oc_enc_frag_recon_intra(_enc,_dst,_ystride,_residue) \
-  oc_frag_recon_intra_c(_dst,_ystride,_residue)
-#  endif
-#  if !defined(oc_enc_frag_recon_inter)
-#   define oc_enc_frag_recon_inter(_enc,_dst,_src,_ystride,_residue) \
-  oc_frag_recon_inter_c(_dst,_src,_ystride,_residue)
 #  endif
 #  if !defined(oc_enc_fdct8x8)
 #   define oc_enc_fdct8x8(_enc,_y,_x) oc_enc_fdct8x8_c(_y,_x)
@@ -319,10 +303,6 @@ struct oc_enc_opt_vtable{
   void     (*enquant_table_fixup)(void *_enquant[3][3][2],int _nqis);
   int      (*quantize)(ogg_int16_t _qdct[64],const ogg_int16_t _dct[64],
    const ogg_uint16_t _dequant[64],const void *_enquant);
-  void     (*frag_recon_intra)(unsigned char *_dst,int _ystride,
-   const ogg_int16_t _residue[64]);
-  void     (*frag_recon_inter)(unsigned char *_dst,
-   const unsigned char *_src,int _ystride,const ogg_int16_t _residue[64]);
   void     (*fdct8x8)(ogg_int16_t _y[64],const ogg_int16_t _x[64]);
 };
 

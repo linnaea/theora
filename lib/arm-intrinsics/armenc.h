@@ -32,9 +32,6 @@
 #   define oc_enc_frag_copy2(_enc,...) oc_enc_frag_copy2_neon(__VA_ARGS__)
 #   define oc_enc_frag_sub(_enc,...) oc_enc_frag_sub_neon(__VA_ARGS__)
 #   define oc_enc_frag_sub_128(_enc,...) oc_enc_frag_sub_128_neon(__VA_ARGS__)
-
-#   define oc_enc_frag_recon_intra(_enc,...) oc_frag_recon_intra_neon(__VA_ARGS__)
-#   define oc_enc_frag_recon_inter(_enc,...) oc_frag_recon_inter_neon(__VA_ARGS__)
 #  else
 #   define OC_ENC_USE_VTABLE (1)
 #  endif
