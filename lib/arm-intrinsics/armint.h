@@ -35,16 +35,8 @@
 # include "armcpu.h"
 
 # if defined(OC_ARM_ASM)
+#  include "armfrag.h"
 void oc_state_accel_init_arm(oc_theora_state *_state);
-void oc_frag_copy_neon(unsigned char *_dst,const unsigned char *_src,int _ystride);
-void oc_frag_copy_list_neon(unsigned char *_dst_frame, const unsigned char *_src_frame,int _ystride,
-                            const ptrdiff_t *_fragis,ptrdiff_t _nfragis,const ptrdiff_t *_frag_buf_offs);
-void oc_frag_recon_intra_neon(unsigned char *_dst,
-                              int _ystride, const int16_t _residue[64]);
-void oc_frag_recon_inter_neon(unsigned char *_dst, const unsigned char *_src,
-                              int _ystride,const int16_t _residue[64]);
-void oc_frag_recon_inter2_neon(unsigned char *_dst,const unsigned char *_src1, const unsigned char *_src2,
-                               int _ystride,const int16_t _residue[64]);
 # endif
 
 #endif

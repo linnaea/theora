@@ -1,6 +1,7 @@
+#include "armfrag.h"
+
+#if defined(OC_ARM_ASM_NEON)
 #include <arm_neon.h>
-#include <stdint.h>
-#include <stddef.h>
 
 void oc_frag_copy_neon(unsigned char *_dst,const unsigned char *_src,int _ystride) {
   for (int i = 0; i < 8; i++)
@@ -42,3 +43,4 @@ void oc_frag_recon_inter2_neon(unsigned char *_dst,const unsigned char *_src1, c
                                   vreinterpretq_s16_u16(vmovl_u8(vhadd_u8(vld1_u8(&_src1[i * _ystride]),
                                                                           vld1_u8(&_src2[i * _ystride])))))));
 }
+#endif

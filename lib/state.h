@@ -58,6 +58,9 @@ typedef struct oc_theora_state          oc_theora_state;
 # if defined(OC_C64X_ASM)
 #  include "c64x/c64xint.h"
 # endif
+# if defined(OC_WASM_SIMD128)
+#  include "wasm-simd/wav128int.h"
+# endif
 
 # if !defined(oc_state_accel_init)
 #  define oc_state_accel_init oc_state_accel_init_c

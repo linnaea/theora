@@ -1,5 +1,7 @@
+#include "armencfrag.h"
+
+#ifdef OC_ARM_ASM_NEON
 #include <arm_neon.h>
-#include <stdint.h>
 
 #ifndef __aarch64__
 #  define vuzp1q_s64(a, b) (vcombine_s64(vget_low_s64(a), vget_low_s64(b)))
@@ -251,3 +253,4 @@ void oc_enc_frag_sub_128_neon(int16_t _diff[64],const unsigned char *_src,int _y
     vst1q_s16(&_diff[i * 8],
               vreinterpretq_s16_u16(vsubl_u8(vld1_u8(&_src[i * _ystride]), vdup_n_u8(128))));
 }
+#endif

@@ -223,37 +223,7 @@ if test "x${ac_enable_asm}" = xyes; then
     cpu_arm=yes
     cpu_optimization="ARM"
     AC_DEFINE([OC_ARM_ASM], [],  [make use of arm asm optimization])
-    AC_ARG_ENABLE(asflag-probe,
-        AS_HELP_STRING([--disable-asflag-probe], [Disable instructions not supported by the default ASFLAGS (ARM only).]),
-        [ ac_enable_asflag_probe=$enableval ], [ ac_enable_asflag_probe=yes] )
-
-    dnl AC_TRY_ASSEMBLE uses CFLAGS instead of CCASFLAGS
-    save_CFLAGS="$CFLAGS"
-    ARM_CCASFLAGS=
-    dnl Test for instruction set support with the default CCASFLAGS.
     AC_CHECK_DECLS([vabal_u8], [HAVE_ARM_ASM_NEON=1], [HAVE_ARM_ASM_NEON=0], [[#include <arm_neon.h>]])
-    dnl gas will not assemble instructions unless the architecture explicitly
-    dnl  supports it (unlike on x86).
-    dnl Try to speculatively add ASFLAGS to enable usage of these instructions
-    dnl  at assembly time (actual support is detected at runtime).
-    dnl If the user has already specified -march or -mcpu flags, this may give
-    dnl  some spurious warnings (use --disable-asflag-probe to avoid this if
-    dnl  you don't want run-time support for instructions not available on the
-    dnl  architecture you specified).
-    dnl Order here is important.
-    if test "x${ac_enable_asflag_probe}" = xyes; then
-      if test x$HAVE_ARM_ASM_NEON != x1 ; then
-        dnl Try to set some flags to enable NEON instructions.
-        AC_MSG_NOTICE([trying custom CCASFLAGS to enable NEON instructions...])
-        ARM_CCASFLAGS="-mfpu=neon -march=armv7-a"
-        CFLAGS="$save_CFLAGS $ARM_CCASFLAGS"
-        AC_CHECK_DECLS([vabal_u8], [HAVE_ARM_ASM_NEON=1], [HAVE_ARM_ASM_NEON=0], [[#include <arm_neon.h>]])
-        if test x$HAVE_ARM_ASM_NEON != x1 ; then
-          ARM_CCASFLAGS=
-          CFLAGS="$save_CFLAGS"
-        fi
-      fi
-    fi
 
     if test x$HAVE_ARM_ASM_NEON = x1 ; then
       AC_DEFINE(OC_ARM_ASM_NEON, 1,
@@ -261,14 +231,26 @@ if test "x${ac_enable_asm}" = xyes; then
       cpu_optimization="$cpu_optimization (NEON)"
     fi
     AC_SUBST(HAVE_ARM_ASM_NEON)
-
-    CFLAGS="$save_CFLAGS"
-    CCASFLAGS="$CCASFLAGS $ARM_CCASFLAGS"
     ;;
   tic6x)
     cpu_c64x=yes
     cpu_optimization="TI C64x+"
     AC_DEFINE([OC_C64X_ASM], [],  [make use of c64x+ asm optimization])
+    ;;
+  wasm*)
+    cpu_wasm=yes
+    cpu_optimization="WASM"
+    AC_ARG_ENABLE(wasm-simd128,
+      AS_HELP_STRING([--enable-wasm-simd128], [Enable WASM SIMD128 decoder optimizations]),
+      [ ac_enable_wasm_simd128=$enableval ], [ ac_enable_wasm_simd128=no ])
+
+    if test x$ac_enable_wasm_simd128 = xyes ; then
+      CFLAGS="$CFLAGS -msimd128"
+      AC_DEFINE(OC_WASM_SIMD128, 1,
+        [Define if targeting WASM with SIMD128 support])
+      cpu_optimization="$cpu_optimization (SIMD128)"
+    fi
+    AC_SUBST(OC_WASM_SIMD128)
     ;;
   esac
 else
@@ -278,6 +260,7 @@ AM_CONDITIONAL([CPU_x86_64], [test x$cpu_x86_64 = xyes])
 AM_CONDITIONAL([CPU_x86_32], [test x$cpu_x86_32 = xyes])
 AM_CONDITIONAL([CPU_arm], [test x$cpu_arm = xyes])
 AM_CONDITIONAL([CPU_c64x], [test x$cpu_c64x = xyes])
+AM_CONDITIONAL([CPU_wasm], [test x$cpu_wasm = xyes])
 
 # Test whenever ld supports -version-script
 AC_PROG_LD

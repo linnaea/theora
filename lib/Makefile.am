@@ -68,26 +68,33 @@ encoder_shared_arm_sources = \
 	arm-intrinsics/armfrag.c \
 	arm-intrinsics/armstate.c
 
-if CPU_x86_64
-encoder_uniq_arch_sources = \
- $(encoder_uniq_x86_sources) \
- $(encoder_uniq_x86_64_sources)
-encoder_shared_arch_sources = \
- $(encoder_shared_x86_sources) \
- $(encoder_shared_x86_64_sources)
-else
-if CPU_x86_32
-encoder_uniq_arch_sources = $(encoder_uniq_x86_sources)
-encoder_shared_arch_sources = $(encoder_shared_x86_sources)
-else
-if CPU_arm
-encoder_uniq_arch_sources = $(encoder_uniq_arm_sources)
-encoder_shared_arch_sources = $(encoder_shared_arm_sources)
-else
+encoder_uniq_wasm_sources =
+
+encoder_shared_wasm_sources = \
+	wasm-simd/wav128frag.c
+
 encoder_uniq_arch_sources =
 encoder_shared_arch_sources =
+
+if CPU_x86_64
+encoder_uniq_arch_sources += \
+ $(encoder_uniq_x86_sources) \
+ $(encoder_uniq_x86_64_sources)
+encoder_shared_arch_sources += \
+ $(encoder_shared_x86_sources) \
+ $(encoder_shared_x86_64_sources)
 endif
+if CPU_x86_32
+encoder_uniq_arch_sources += $(encoder_uniq_x86_sources)
+encoder_shared_arch_sources += $(encoder_shared_x86_sources)
 endif
+if CPU_arm
+encoder_uniq_arch_sources += $(encoder_uniq_arm_sources)
+encoder_shared_arch_sources += $(encoder_shared_arm_sources)
+endif
+if CPU_wasm
+encoder_uniq_arch_sources += $(encoder_uniq_wasm_sources)
+encoder_shared_arch_sources += $(encoder_shared_wasm_sources)
 endif
 
 encoder_uniq_sources = \
@@ -139,22 +146,25 @@ decoder_c64x_sources = \
 	c64x/c64xidct.c \
 	c64x/c64xstate.c
 
-if CPU_x86_64
-decoder_arch_sources = $(decoder_x86_sources)
-else
-if CPU_x86_32
-decoder_arch_sources = $(decoder_x86_sources)
-else
-if CPU_arm
-decoder_arch_sources = $(decoder_arm_sources)
-else
-if CPU_c64x
-decoder_arch_sources = $(decoder_c64x_sources)
-else
+decoder_wasm_sources = \
+	wasm-simd/wav128frag.c
+
 decoder_arch_sources =
+
+if CPU_x86_64
+decoder_arch_sources += $(decoder_x86_sources)
 endif
+if CPU_x86_32
+decoder_arch_sources += $(decoder_x86_sources)
 endif
+if CPU_arm
+decoder_arch_sources += $(decoder_arm_sources)
 endif
+if CPU_c64x
+decoder_arch_sources += $(decoder_c64x_sources)
+endif
+if CPU_wasm
+decoder_arch_sources += $(decoder_wasm_sources)
 endif
 
 decoder_sources = \
