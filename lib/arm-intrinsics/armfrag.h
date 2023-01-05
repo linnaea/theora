@@ -7,6 +7,7 @@
 #endif
 
 #ifdef OC_ARM_ASM_NEON
+void oc_idct8x8_neon(int16_t _y[64],int16_t _x[64],int _last_zzi);
 void oc_frag_copy_neon(unsigned char *_dst,const unsigned char *_src,int _ystride);
 void oc_frag_copy_list_neon(unsigned char *_dst_frame, const unsigned char *_src_frame,int _ystride,
                             const ptrdiff_t *_fragis,ptrdiff_t _nfragis,const ptrdiff_t *_frag_buf_offs);

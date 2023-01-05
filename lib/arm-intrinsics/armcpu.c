@@ -19,10 +19,14 @@
 
 #include "armcpu.h"
 
-#if !defined(OC_ARM_ASM)|| \
- !defined(OC_ARM_ASM_NEON)
+#if !defined(OC_ARM_ASM) || !defined(OC_ARM_ASM_NEON)
 ogg_uint32_t oc_cpu_flags_get(void){
   return 0;
+}
+
+#elif defined(__aarch64__) || defined(_M_ARM64)
+ogg_uint32_t oc_cpu_flags_get(void) {
+  return OC_CPU_ARM_NEON;
 }
 
 #elif defined(_MSC_VER)
@@ -39,7 +43,7 @@ ogg_uint32_t oc_cpu_flags_get(void){
     All of these instructions should be essentially nops.*/
 # if defined(OC_ARM_ASM_NEON)
   __try{
-#  if defined(__aarch64__)
+#  if defined(__aarch64__) || defined(_M_ARM64)
     /*MOV v0.16B,v0.16B*/
     __emit(0x4EA01C00);
 #  else

@@ -20,7 +20,8 @@
 
 # if defined(OC_ARM_ASM)
 #  define oc_state_accel_init oc_state_accel_init_arm
-#  ifdef __aarch64__
+#  if defined(__aarch64__) || defined(_M_ARM64)
+#   define oc_idct8x8(_state,...) oc_idct8x8_neon(__VA_ARGS__)
 #   define oc_frag_copy(_state,...) oc_frag_copy_neon(__VA_ARGS__)
 #   define oc_frag_copy_list(_enc,...) oc_frag_copy_list_neon(__VA_ARGS__)
 #   define oc_frag_recon_intra(_enc,...) oc_frag_recon_intra_neon(__VA_ARGS__)

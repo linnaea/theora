@@ -5,7 +5,6 @@ AM_CFLAGS = $(OGG_CFLAGS) $(CAIRO_CFLAGS)
 
 EXTRA_DIST = \
 	encoder_disabled.c \
-	arm-intrinsics/armbits.h \
 	arm-intrinsics/armcpu.h \
 	arm-intrinsics/armenc.h \
 	arm-intrinsics/armint.h \
@@ -66,6 +65,7 @@ encoder_uniq_arm_sources = \
 encoder_shared_arm_sources = \
 	arm-intrinsics/armcpu.c \
 	arm-intrinsics/armfrag.c \
+	arm-intrinsics/armidct.c \
 	arm-intrinsics/armstate.c
 
 encoder_uniq_wasm_sources =
@@ -138,6 +138,7 @@ decoder_x86_sources = \
 decoder_arm_sources = \
 	arm-intrinsics/armcpu.c \
 	arm-intrinsics/armfrag.c \
+	arm-intrinsics/armidct.c \
 	arm-intrinsics/armstate.c
 
 decoder_c64x_sources = \
