@@ -66,6 +66,7 @@ encoder_shared_arm_sources = \
 	arm-intrinsics/armcpu.c \
 	arm-intrinsics/armfrag.c \
 	arm-intrinsics/armidct.c \
+	arm-intrinsics/armloop.c \
 	arm-intrinsics/armstate.c
 
 encoder_uniq_wasm_sources =
@@ -139,6 +140,7 @@ decoder_arm_sources = \
 	arm-intrinsics/armcpu.c \
 	arm-intrinsics/armfrag.c \
 	arm-intrinsics/armidct.c \
+	arm-intrinsics/armloop.c \
 	arm-intrinsics/armstate.c
 
 decoder_c64x_sources = \
