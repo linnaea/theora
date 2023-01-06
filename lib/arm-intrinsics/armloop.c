@@ -12,7 +12,7 @@ static inline uint8x8x2_t loop_filter_neon(uint8x8x4_t pix, uint16_t lim2u) {
     int16x8_t r = vreinterpretq_s16_u16(vsubl_u8(pix.val[0], pix.val[3]));
     r = vaddq_s16(r, r2);
     r = vaddq_s16(r, vshlq_n_s16(r2, 1));
-    r = vrshrq_n_s16(r, 3);
+    r = vshrq_n_s16(r, 3);
 
     uint16x8_t absR = vreinterpretq_u16_s16(vabsq_s16(r));
     int16x8_t sgnR = vrshrq_n_s16(r, 15);
