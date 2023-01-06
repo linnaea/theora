@@ -101,7 +101,7 @@ unsigned oc_enc_frag_intra_sad_c(const unsigned char *_src, int _ystride){
   sad=0;
   for(i=8;i-->0;){
     int j;
-    for(j=0;j<8;j++)sad+=abs(_src[j]-dc);
+    for(j=0;j<8;j++)sad+=abs(_src[j]-(int)dc);
     _src+=_ystride;
   }
   return sad;

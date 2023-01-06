@@ -19,6 +19,27 @@ static inline int16x8_t scale_nu_s16(int16x8_t a, uint16_t b) {
     return vuzp2q_s16(vreinterpretq_s16_s32(al), vreinterpretq_s16_s32(ah));
 }
 
+static void v_transpose4x8(const int16x4_t a[8], int16x8_t b[4]) {
+    int16x8x2_t s0 = vtrnq_s16(vcombine_s16(a[0], a[4]), vcombine_s16(a[1], a[5]));
+    int16x8x2_t s1 = vtrnq_s16(vcombine_s16(a[2], a[6]), vcombine_s16(a[3], a[7]));
+    /*  1  5  3  7 17 21 19 23  s0[0] = VTRN1.1N p0 p1 */
+    /*  2  6  4  8 18 22 20 24  s0[1] = VTRN2.1N p0 p1 */
+    /*  9 13 11 15 25 29 27 31  s1[0] = VTRN1.1N p2 p3 */
+    /* 10 14 12 16 26 30 28 32  s1[1] = VTRN2.1N p2 p3 */
+
+    int32x4x2_t t0 = vtrnq_s32(vreinterpretq_s32_s16(s0.val[0]), vreinterpretq_s32_s16(s1.val[0]));
+    int32x4x2_t t1 = vtrnq_s32(vreinterpretq_s32_s16(s0.val[1]), vreinterpretq_s32_s16(s1.val[1]));
+    /*  1  5  9 13 17 21 25 29  t0[0] = VTRN1.2N s0[0] s1[0] */
+    /*  2  6 10 14 18 22 26 30  t1[0] = VTRN1.2N s0[1] s1[1] */
+    /*  3  7 11 15 19 23 27 31  t0[1] = VTRN2.2N s0[0] s1[0] */
+    /*  4  8 12 16 20 24 28 32  t1[1] = VTRN2.2N s0[1] s1[1] */
+
+    b[0] = vreinterpretq_s16_s32(t0.val[0]);
+    b[1] = vreinterpretq_s16_s32(t1.val[0]);
+    b[2] = vreinterpretq_s16_s32(t0.val[1]);
+    b[3] = vreinterpretq_s16_s32(t1.val[1]);
+}
+
 static void idct8x8(const int16x8_t x[8], int16x8_t y[8]) {
     int16x8_t t[8], r;
 

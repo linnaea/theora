@@ -184,12 +184,11 @@ if test -z "$GCC"; then
                 PROFILE="-g -p -DDEBUG" ;;
         esac
 else
-
         case $host in 
         *)
-                DEBUG="-g -Wall -Wno-parentheses -DDEBUG -D__NO_MATH_INLINES"
-                CFLAGS="-Wall -Wno-parentheses -O3 -fomit-frame-pointer -finline-functions -funroll-loops"
-                PROFILE="-Wall -Wno-parentheses -pg -g -O3 -fno-inline-functions -DDEBUG";;
+                DEBUG="-g -Wall -Wno-shift-negative-value -Wno-parentheses -DDEBUG -D__NO_MATH_INLINES"
+                CFLAGS="-Wall -Wno-shift-negative-value -Wno-parentheses -O3 -fomit-frame-pointer -finline-functions -funroll-loops"
+                PROFILE="-Wall -Wno-shift-negative-value -Wno-parentheses -pg -g -O3 -fno-inline-functions -DDEBUG";;
         esac
 fi
 CFLAGS="$CFLAGS $cflags_save"
