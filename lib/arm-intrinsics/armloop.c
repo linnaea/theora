@@ -8,8 +8,8 @@
 static inline uint8x8x2_t loop_filter_neon(uint8x8x4_t pix, uint16_t lim2u) {
     uint16x8_t lim2 = vdupq_n_u16(lim2u);
 
-    int16x8_t r2 = vsubl_u8(pix.val[2], pix.val[1]);
-    int16x8_t r = vsubl_u8(pix.val[0], pix.val[3]);
+    int16x8_t r2 = vreinterpretq_s16_u16(vsubl_u8(pix.val[2], pix.val[1]));
+    int16x8_t r = vreinterpretq_s16_u16(vsubl_u8(pix.val[0], pix.val[3]));
     r = vaddq_s16(r, r2);
     r = vaddq_s16(r, vshlq_n_s16(r2, 1));
     r = vrshrq_n_s16(r, 3);
@@ -23,7 +23,7 @@ static inline uint8x8x2_t loop_filter_neon(uint8x8x4_t pix, uint16_t lim2u) {
     uint16x8_t p1 = vaddw_u8(vreinterpretq_u16_s16(f), pix.val[1]);
     int16x8_t p2 = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(pix.val[2])), f);
 
-    uint8x8x2_t fr = {vqmovun_s16(vreinterpretq_s16_u16(p1)), vqmovun_s16(p2)};
+    uint8x8x2_t fr = {{vqmovun_s16(vreinterpretq_s16_u16(p1)), vqmovun_s16(p2)}};
     return fr;
 }
 
@@ -54,12 +54,12 @@ static void loop_filter_neon_h(unsigned char *_pix,int _ystride,uint16_t lim2) {
 
 static void loop_filter_neon_v(unsigned char *_pix,int _ystride,uint16_t lim2) {
     _pix -= _ystride * 2;
-    uint8x8x4_t rows = {
+    uint8x8x4_t rows = {{
             vld1_u8(&_pix[_ystride * 0]),
             vld1_u8(&_pix[_ystride * 1]),
             vld1_u8(&_pix[_ystride * 2]),
             vld1_u8(&_pix[_ystride * 3])
-    };
+    }};
 
     uint8x8x2_t fp = loop_filter_neon(rows, lim2);
 
