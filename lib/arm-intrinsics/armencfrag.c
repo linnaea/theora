@@ -2,7 +2,7 @@
 
 #ifdef OC_ARM_ASM_NEON
 #include "neon_a64_compat.h"
-#include "neon_transpose8x8.h"
+#include "neon_transpose.h"
 
 static inline unsigned oc_hadamard_satd_neon_8x8(int *_dc,const int16x8_t _rows[8]) {
     int16x8_t p[8], q[8];
