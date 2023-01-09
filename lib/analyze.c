@@ -1692,18 +1692,17 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
     sbi_end=_enc->pipe.sbi_end[0];
     cfroffset=_enc->pipe.froffset[1];
     for(sbi=_enc->pipe.sbi0[0];sbi<sbi_end;sbi++){
-      int quadi;
+      unsigned quadi;
+      unsigned sb_rd_scale[4][5];
+      unsigned sb_rd_iscale[4][5];
       /*Mode addressing is through Y plane, always 4 MB per SB.*/
       for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
         unsigned  activity[4];
-        unsigned  rd_scale[5];
-        unsigned  rd_iscale[5];
+        unsigned  *rd_scale = sb_rd_scale[quadi];
+        unsigned  *rd_iscale = sb_rd_iscale[quadi];
         unsigned  luma;
         unsigned  mbi;
-        int       mapii;
-        int       mapi;
         int       bi;
-        ptrdiff_t fragi;
         mbi=sbi<<2|quadi;
         /*Activity masking.*/
         if(_enc->sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
@@ -1725,6 +1724,16 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
          _enc->sp_level<OC_SP_LEVEL_NOMC&&_enc->keyframe_frequency_force>1){
           oc_mcenc_search(_enc,mbi);
         }
+      }
+      for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
+        unsigned  *rd_scale = sb_rd_scale[quadi];
+        unsigned  *rd_iscale = sb_rd_iscale[quadi];
+        unsigned  mbi;
+        int       mapii;
+        int       mapi;
+        int       bi;
+        ptrdiff_t fragi;
+        mbi=sbi<<2|quadi;
         if(_enc->sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
           oc_analyze_intra_mb_luma(_enc,_enc->pipe.qs+0,mbi,rd_scale);
         }
@@ -2366,27 +2375,18 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
     sbi_end=_enc->pipe.sbi_end[0];
     cfroffset=_enc->pipe.froffset[1];
     for(sbi=_enc->pipe.sbi0[0];sbi<sbi_end;sbi++){
-      int quadi;
+      unsigned quadi;
+      unsigned sb_rd_scale[4][5];
+      unsigned sb_rd_iscale[4][5];
+      unsigned sb_intra_satd[4][12];
       /*Mode addressing is through Y plane, always 4 MB per SB.*/
       for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
-        oc_mode_choice modes[8];
-        unsigned       activity[4];
-        unsigned       rd_scale[5];
-        unsigned       rd_iscale[5];
-        unsigned       skip_ssd[12];
-        unsigned       intra_satd[12];
-        unsigned       luma;
-        int            mb_mv_bits_0;
-        int            mb_gmv_bits_0;
-        int            inter_mv_pref;
-        int            mb_mode;
-        int            refi;
-        int            mv;
-        unsigned       mbi;
-        int            mapii;
-        int            mapi;
-        int            bi;
-        ptrdiff_t      fragi;
+        unsigned activity[4];
+        unsigned *rd_scale = sb_rd_scale[quadi];
+        unsigned *rd_iscale = sb_rd_iscale[quadi];
+        unsigned *intra_satd = sb_intra_satd[quadi];
+        unsigned luma;
+        unsigned mbi;
         mbi=sbi<<2|quadi;
         luma=oc_mb_intra_satd(_enc,mbi,intra_satd);
         /*Activity masking.*/
@@ -2401,7 +2401,6 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
           We always do a basic 1MV search for all macroblocks, coded or not,
            keyframe or not.*/
         if(!_recode&&sp_level<OC_SP_LEVEL_NOMC)oc_mcenc_search(_enc,mbi);
-        mv=0;
         /*Find the block choice with the lowest estimated coding cost.
           If a Cb or Cr block is coded but no Y' block from a macro block then
            the mode MUST be OC_MODE_INTER_NOMV.
@@ -2416,6 +2415,27 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
            embs[mbi].analysis_mv[0][OC_FRAME_PREV];
           embs[mbi].refined=0;
         }
+      }
+
+      for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi) {
+        oc_mode_choice modes[8];
+        unsigned       skip_ssd[12];
+        unsigned       *rd_scale = sb_rd_scale[quadi];
+        unsigned       *rd_iscale = sb_rd_iscale[quadi];
+        unsigned       *intra_satd = sb_intra_satd[quadi];
+        int            mb_mv_bits_0;
+        int            mb_gmv_bits_0;
+        int            inter_mv_pref;
+        int            mb_mode;
+        int            refi;
+        int            mv;
+        unsigned       mbi;
+        int            mapii;
+        int            mapi;
+        int            bi;
+        ptrdiff_t      fragi;
+        mbi = sbi << 2 | quadi;
+        mv=0;
         /*Estimate the cost of coding this MB in a keyframe.*/
         if(_allow_keyframe){
           oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,

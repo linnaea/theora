@@ -88,7 +88,7 @@ static const int OC_SQUARE_SITES[11][8]={
 };
 
 
-static void oc_mcenc_find_candidates_a(oc_enc_ctx *_enc,oc_mcenc_ctx *_mcenc,
+static void oc_mcenc_find_candidates_a(const oc_enc_ctx *_enc,oc_mcenc_ctx *_mcenc,
  oc_mv _accum,int _mbi,int _frame){
   oc_mb_enc_info *embs;
   int             accum_x;
@@ -140,7 +140,7 @@ static void oc_mcenc_find_candidates_a(oc_enc_ctx *_enc,oc_mcenc_ctx *_mcenc,
   _mcenc->setb0=ncandidates;
 }
 
-static void oc_mcenc_find_candidates_b(oc_enc_ctx *_enc,oc_mcenc_ctx *_mcenc,
+static void oc_mcenc_find_candidates_b(const oc_enc_ctx *_enc,oc_mcenc_ctx *_mcenc,
  oc_mv _accum,int _mbi,int _frame){
   oc_mb_enc_info *embs;
   int             accum_x;
@@ -266,7 +266,7 @@ static unsigned oc_mcenc_ysatd_check_bcandidate_fullpel(const oc_enc_ctx *_enc,
                 either OC_FRAME_PREV or OC_FRAME_GOLD.
   _frame_full: The frame to perform the 1px search on, one of OC_FRAME_PREV,
                 OC_FRAME_GOLD, OC_FRAME_PREV_ORIG, or OC_FRAME_GOLD_ORIG.*/
-void oc_mcenc_search_frame(oc_enc_ctx *_enc,oc_mv _accum,int _mbi,int _frame,
+static void oc_mcenc_search_frame(const oc_enc_ctx *_enc,oc_mv _accum,int _mbi,int _frame,
  int _frame_full){
   /*Note: Traditionally this search is done using a rate-distortion objective
      function of the form D+lambda*R.
@@ -515,7 +515,7 @@ void oc_mcenc_search_frame(oc_enc_ctx *_enc,oc_mv _accum,int _mbi,int _frame,
   }
 }
 
-void oc_mcenc_search(oc_enc_ctx *_enc,int _mbi){
+void oc_mcenc_search(const oc_enc_ctx *_enc,unsigned _mbi){
   oc_mv2 *mvs;
   oc_mv   accum_p;
   oc_mv   accum_g;
@@ -664,7 +664,7 @@ static unsigned oc_mcenc_ysatd_halfpel_mbrefine(const oc_enc_ctx *_enc,
   return _best_err;
 }
 
-void oc_mcenc_refine1mv(oc_enc_ctx *_enc,int _mbi,int _frame){
+void oc_mcenc_refine1mv(const oc_enc_ctx *_enc,unsigned _mbi,int _frame){
   oc_mb_enc_info *embs;
   int             vec[2];
   embs=_enc->mb_info;
@@ -761,7 +761,7 @@ static unsigned oc_mcenc_ysatd_halfpel_brefine(const oc_enc_ctx *_enc,
   return _best_err;
 }
 
-void oc_mcenc_refine4mv(oc_enc_ctx *_enc,int _mbi){
+void oc_mcenc_refine4mv(const oc_enc_ctx *_enc,unsigned _mbi){
   oc_mb_enc_info      *embs;
   const ptrdiff_t     *frag_buf_offs;
   const ptrdiff_t     *fragis;
