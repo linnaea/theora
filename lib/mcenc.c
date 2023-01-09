@@ -615,7 +615,7 @@ static unsigned oc_mcenc_ysatd_halfpel_mbrefine(const oc_enc_ctx *_enc,
   int                  mvoffset_base;
   int                  best_site;
   int                  sitei;
-  int                  err;
+  unsigned             err;
   src=_enc->state.ref_frame_data[OC_FRAME_IO];
   ref=_enc->state.ref_frame_data[_frame];
   frag_buf_offs=_enc->state.frag_buf_offs;
