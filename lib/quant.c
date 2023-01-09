@@ -29,8 +29,8 @@
   I would rather have allowed smaller quantizers and had to clamp, but these
    minimums were required when constructing the original VP3 matrices and have
    been formalized in the spec.*/
-static const unsigned OC_DC_QUANT_MIN[2]={4<<2,8<<2};
-static const unsigned OC_AC_QUANT_MIN[2]={2<<2,4<<2};
+static const unsigned OC_DC_QUANT_MIN[2]={15,29};
+static const unsigned OC_AC_QUANT_MIN[2]={ 8,15};
 
 /*Initializes the dequantization tables from a set of quantizer info.
   Currently the dequantizer (and elsewhere enquantizer) tables are expected to
