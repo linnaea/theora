@@ -736,11 +736,11 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode);
 
 
 /*Perform fullpel motion search for a single MB against both reference frames.*/
-void oc_mcenc_search(const oc_enc_ctx *_enc,unsigned _mbi);
+void oc_mcenc_search(oc_enc_ctx *_enc,unsigned _mbi);
 /*Refine a MB MV for one frame.*/
-void oc_mcenc_refine1mv(const oc_enc_ctx *_enc,unsigned _mbi,int _frame);
+void oc_mcenc_refine1mv(oc_enc_ctx *_enc,unsigned _mbi,int _frame);
 /*Refine the block MVs.*/
-void oc_mcenc_refine4mv(const oc_enc_ctx *_enc,unsigned _mbi);
+void oc_mcenc_refine4mv(oc_enc_ctx *_enc,unsigned _mbi);
 
 
 

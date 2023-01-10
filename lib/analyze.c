@@ -2466,10 +2466,19 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         oc_cost_inter_nomv_satd(_enc,mbi,OC_MODE_INTER_NOMV,sb_i0mv_satd[quadi]);
         oc_cost_inter_nomv_satd(_enc,mbi,OC_MODE_GOLDEN_NOMV,sb_g0mv_satd[quadi]);
         if(sp_level<OC_SP_LEVEL_NOMC){
+          if(!(embs[mbi].refined&(1<<OC_MODE_INTER_MV))){
+            oc_mcenc_refine1mv(_enc,mbi,OC_FRAME_PREV);
+            embs[mbi].refined|=(1<<OC_MODE_INTER_MV);
+          }
+          if(!(embs[mbi].refined&(1<<OC_MODE_GOLDEN_MV))){
+            oc_mcenc_refine1mv(_enc,mbi,OC_FRAME_GOLD);
+            embs[mbi].refined|=(1<<OC_MODE_GOLDEN_MV);
+          }
+
           oc_cost_inter1mv_satd(_enc,mbi,OC_MODE_INTER_MV,
-                                embs[mbi].unref_mv[OC_FRAME_PREV],sb_i1mv_satd[quadi]);
+                                embs[mbi].analysis_mv[0][OC_FRAME_PREV],sb_i1mv_satd[quadi]);
           oc_cost_inter1mv_satd(_enc,mbi,OC_MODE_GOLDEN_MV,
-                                embs[mbi].unref_mv[OC_FRAME_GOLD],sb_g1mv_satd[quadi]);
+                                embs[mbi].analysis_mv[0][OC_FRAME_GOLD],sb_g1mv_satd[quadi]);
         }
       }
 
@@ -2490,7 +2499,7 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         int            mapi;
         int            bi;
         ptrdiff_t      fragi;
-        mbi = sbi << 2 | quadi;
+        mbi=sbi<<2|quadi;
         mv=0;
         /*Estimate the cost of coding this MB in a keyframe.*/
         if(_allow_keyframe){
@@ -2504,15 +2513,19 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         }
         /*Estimate the cost in a delta frame for various modes.*/
         oc_skip_cost(_enc,&_enc->pipe,mbi,skip_ssd);
+        oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,
+         _enc->pipe.fr+0,_enc->pipe.qs+0,intra_satd,skip_ssd,rd_scale);
+        oc_cost_inter_nomv(_enc,modes+OC_MODE_INTER_NOMV,mbi,
+         OC_MODE_INTER_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
+         skip_ssd,rd_scale,sb_i0mv_satd[quadi]);
+        oc_cost_inter_nomv(_enc,modes+OC_MODE_GOLDEN_NOMV,mbi,
+         OC_MODE_GOLDEN_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
+         skip_ssd,rd_scale,sb_g0mv_satd[quadi]);
+
         if(sp_level<OC_SP_LEVEL_NOMC){
           unsigned frag_satd[12];
-          oc_cost_inter_nomv(_enc,modes+OC_MODE_INTER_NOMV,mbi,
-           OC_MODE_INTER_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-           skip_ssd,rd_scale,sb_i0mv_satd[quadi]);
-          oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,
-           _enc->pipe.fr+0,_enc->pipe.qs+0,intra_satd,skip_ssd,rd_scale);
           mb_mv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_INTER_MV,mbi,
-           OC_MODE_INTER_MV,embs[mbi].unref_mv[OC_FRAME_PREV],
+           OC_MODE_INTER_MV,embs[mbi].analysis_mv[0][OC_FRAME_PREV],
            _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,sb_i1mv_satd[quadi]);
           oc_cost_inter_satd(_enc,mbi,OC_MODE_INTER_MV_LAST,last_mv,frag_satd);
           oc_cost_inter(_enc,modes+OC_MODE_INTER_MV_LAST,mbi,
@@ -2522,11 +2535,8 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
           oc_cost_inter(_enc,modes+OC_MODE_INTER_MV_LAST2,mbi,
            OC_MODE_INTER_MV_LAST2,prior_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
            skip_ssd,rd_scale,frag_satd);
-          oc_cost_inter_nomv(_enc,modes+OC_MODE_GOLDEN_NOMV,mbi,
-           OC_MODE_GOLDEN_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-           skip_ssd,rd_scale,sb_g0mv_satd[quadi]);
           mb_gmv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_GOLDEN_MV,mbi,
-           OC_MODE_GOLDEN_MV,embs[mbi].unref_mv[OC_FRAME_GOLD],
+           OC_MODE_GOLDEN_MV,embs[mbi].analysis_mv[0][OC_FRAME_GOLD],
            _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,sb_g1mv_satd[quadi]);
           /*The explicit MV modes (2,6,7) have not yet gone through halfpel
              refinement.
@@ -2553,27 +2563,6 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
              embs[mbi].ref_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
              skip_ssd,rd_scale);
           }
-          else if(modes[OC_MODE_GOLDEN_MV].cost+inter_mv_pref<
-           modes[OC_MODE_INTER_MV].cost){
-            if(!(embs[mbi].refined&(1<<OC_MODE_GOLDEN_MV))){
-              oc_mcenc_refine1mv(_enc,mbi,OC_FRAME_GOLD);
-              embs[mbi].refined|=(1<<OC_MODE_GOLDEN_MV);
-            }
-            oc_cost_inter1mv_satd(_enc,mbi,OC_MODE_GOLDEN_MV,
-                                  embs[mbi].analysis_mv[0][OC_FRAME_GOLD],frag_satd);
-            mb_gmv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_GOLDEN_MV,mbi,
-             OC_MODE_GOLDEN_MV,embs[mbi].analysis_mv[0][OC_FRAME_GOLD],
-             _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,frag_satd);
-          }
-          if(!(embs[mbi].refined&(1<<OC_MODE_INTER_MV))){
-            oc_mcenc_refine1mv(_enc,mbi,OC_FRAME_PREV);
-            embs[mbi].refined|=(1<<OC_MODE_INTER_MV);
-          }
-          oc_cost_inter1mv_satd(_enc,mbi,OC_MODE_GOLDEN_MV,
-                                embs[mbi].analysis_mv[0][OC_FRAME_GOLD],frag_satd);
-          mb_mv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_INTER_MV,mbi,
-           OC_MODE_INTER_MV,embs[mbi].analysis_mv[0][OC_FRAME_PREV],
-           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,frag_satd);
           /*Finally, pick the mode with the cheapest estimated R-D cost.*/
           mb_mode=OC_MODE_INTER_NOMV;
           if(modes[OC_MODE_INTRA].cost<modes[OC_MODE_INTER_NOMV].cost){
@@ -2603,14 +2592,6 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
           }
         }
         else{
-          oc_cost_inter_nomv(_enc,modes+OC_MODE_INTER_NOMV,mbi,
-           OC_MODE_INTER_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-           skip_ssd,rd_scale,sb_i0mv_satd[quadi]);
-          oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,
-           _enc->pipe.fr+0,_enc->pipe.qs+0,intra_satd,skip_ssd,rd_scale);
-          oc_cost_inter_nomv(_enc,modes+OC_MODE_GOLDEN_NOMV,mbi,
-           OC_MODE_GOLDEN_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-           skip_ssd,rd_scale,sb_g0mv_satd[quadi]);
           mb_mode=OC_MODE_INTER_NOMV;
           if(modes[OC_MODE_INTRA].cost<modes[OC_MODE_INTER_NOMV].cost){
             mb_mode=OC_MODE_INTRA;
