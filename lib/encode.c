@@ -1209,6 +1209,9 @@ static int oc_enc_init(oc_enc_ctx *_enc,const th_info *_info){
   _enc->vp3_compatible=0;
   /*No INTER frames coded yet.*/
   _enc->coded_inter_frame=0;
+  /*Default to 3 threads.*/
+  _enc->threads=NULL;
+  oc_enc_worker_set_threads(_enc, 3);
   if(_enc->mb_info==NULL||_enc->frag_dc==NULL||_enc->coded_mbis==NULL
    ||_enc->mcu_skip_ssd==NULL||_enc->dct_tokens[0]==NULL
    ||_enc->dct_tokens[1]==NULL||_enc->dct_tokens[2]==NULL
@@ -1229,6 +1232,7 @@ static int oc_enc_init(oc_enc_ctx *_enc,const th_info *_info){
 
 static void oc_enc_clear(oc_enc_ctx *_enc){
   int pli;
+  oc_enc_worker_free(_enc);
   oc_rc_state_clear(&_enc->rc);
   oggpackB_writeclear(&_enc->opb);
   oc_quant_params_clear(&_enc->qinfo);
@@ -1547,6 +1551,15 @@ int th_encode_ctl(th_enc_ctx *_enc,int _req,void *_buf,size_t _buf_sz){
       return 0;
     }
 #endif
+    case TH_ENCCTL_SET_NUM_THREADS:{
+      int threads;
+      if(_enc==NULL||_buf==NULL)return TH_EFAULT;
+      if(_buf_sz!=sizeof(threads))return TH_EINVAL;
+      threads=*(int *)_buf;
+      threads = oc_enc_worker_set_threads(_enc, threads);
+      *(int *)_buf=threads;
+      return 0;
+    }
     default:return TH_EIMPL;
   }
 }

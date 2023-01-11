@@ -16,7 +16,7 @@
  ********************************************************************/
 #include <limits.h>
 #include <string.h>
-#include "encint.h"
+#include "enc_worker.h"
 #include "modedec.h"
 #if defined(OC_COLLECT_METRICS)
 # include "collect.c"
@@ -579,10 +579,10 @@ static void oc_enc_pipeline_init(oc_enc_ctx *_enc,oc_enc_pipeline_state *_pipe){
 /*Sets the current MCU stripe to super block row _sby.
   Return: A non-zero value if this was the last MCU.*/
 static int oc_enc_pipeline_set_stripe(oc_enc_ctx *_enc,
- oc_enc_pipeline_state *_pipe,int _sby){
+ oc_enc_pipeline_state *_pipe,unsigned _sby){
   const oc_fragment_plane *fplane;
   unsigned                 mcu_nvsbs;
-  int                      sby_end;
+  unsigned                 sby_end;
   int                      notdone;
   int                      vdec;
   int                      pli;
@@ -1150,258 +1150,6 @@ static unsigned oc_dct_cost2(oc_enc_ctx *_enc,unsigned *_ssd,
    by zero checks in oc_mb_masking().*/
 # define OC_ACTIVITY_AVG_MIN (1<<OC_RD_SCALE_BITS)
 
-static unsigned oc_mb_activity(oc_enc_ctx *_enc,unsigned _mbi,
- unsigned _activity[4]){
-  const unsigned char *src;
-  const ptrdiff_t     *frag_buf_offs;
-  const ptrdiff_t     *sb_map;
-  unsigned             luma;
-  int                  ystride;
-  ptrdiff_t            frag_offs;
-  ptrdiff_t            fragi;
-  int                  bi;
-  frag_buf_offs=_enc->state.frag_buf_offs;
-  sb_map=_enc->state.sb_maps[_mbi>>2][_mbi&3];
-  src=_enc->state.ref_frame_data[OC_FRAME_IO];
-  ystride=_enc->state.ref_ystride[0];
-  luma=0;
-  for(bi=0;bi<4;bi++){
-    const unsigned char *s;
-    unsigned             x;
-    unsigned             x2;
-    unsigned             act;
-    int                  i;
-    int                  j;
-    fragi=sb_map[bi];
-    frag_offs=frag_buf_offs[fragi];
-    /*TODO: This could be replaced with SATD^2, since we already have to
-       compute SATD.*/
-    x=x2=0;
-    s=src+frag_offs;
-    for(i=0;i<8;i++){
-      for(j=0;j<8;j++){
-        unsigned c;
-        c=s[j];
-        x+=c;
-        x2+=c*c;
-      }
-      s+=ystride;
-    }
-    luma+=x;
-    act=(x2<<6)-x*x;
-    if(act<8<<12){
-      /*The region is flat.*/
-      act=OC_MINI(act,5<<12);
-    }
-    else{
-      unsigned e1;
-      unsigned e2;
-      unsigned e3;
-      unsigned e4;
-      /*Test for an edge.
-        TODO: There are probably much simpler ways to do this (e.g., it could
-         probably be combined with the SATD calculation).
-        Alternatively, we could split the block around the mean and compute the
-         reduction in variance in each half.
-        For a Gaussian source the reduction should be
-         (1-2/pi) ~= 0.36338022763241865692446494650994.
-        Significantly more reduction is a good indication of a bi-level image.
-        This has the advantage of identifying, in addition to straight edges,
-         small text regions, which would otherwise be classified as "texture".*/
-      e1=e2=e3=e4=0;
-      s=src+frag_offs-1;
-      for(i=0;i<8;i++){
-        for(j=0;j<8;j++){
-          e1+=abs((s[j+2]-s[j]<<1)+(s-ystride)[j+2]-(s-ystride)[j]
-           +(s+ystride)[j+2]-(s+ystride)[j]);
-          e2+=abs(((s+ystride)[j+1]-(s-ystride)[j+1]<<1)
-           +(s+ystride)[j]-(s-ystride)[j]+(s+ystride)[j+2]-(s-ystride)[j+2]);
-          e3+=abs(((s+ystride)[j+2]-(s-ystride)[j]<<1)
-           +(s+ystride)[j+1]-s[j]+s[j+2]-(s-ystride)[j+1]);
-          e4+=abs(((s+ystride)[j]-(s-ystride)[j+2]<<1)
-           +(s+ystride)[j+1]-s[j+2]+s[j]-(s-ystride)[j+1]);
-        }
-        s+=ystride;
-      }
-      /*If the largest component of the edge energy is at least 40% of the
-         total, then classify the block as an edge block.*/
-      if(5*OC_MAXI(OC_MAXI(e1,e2),OC_MAXI(e3,e4))>2*(e1+e2+e3+e4)){
-         /*act=act_th*(act/act_th)**0.7
-              =exp(log(act_th)+0.7*(log(act)-log(act_th))).
-           Here act_th=5.0 and 0x394A=oc_blog32_q10(5<<12).*/
-         act=oc_bexp32_q10(0x394A+(7*(oc_blog32_q10(act)-0x394A+5)/10));
-      }
-    }
-    _activity[bi]=act;
-  }
-  return luma;
-}
-
-static void oc_mb_activity_fast(oc_enc_ctx *_enc,unsigned _mbi,
- unsigned _activity[4],const unsigned _intra_satd[12]){
-  int bi;
-  for(bi=0;bi<4;bi++){
-    unsigned act;
-    act=(11*_intra_satd[bi]>>8)*_intra_satd[bi];
-    if(act<8<<12){
-      /*The region is flat.*/
-      act=OC_MINI(act,5<<12);
-    }
-    _activity[bi]=act;
-  }
-}
-
-/*Compute the masking scales for the blocks in a macro block.
-  All masking is computed from the luma blocks.
-  We derive scaling factors for the chroma blocks from these, and use the same
-   ones for all chroma blocks, regardless of the subsampling.
-  It's possible for luma to be perfectly flat and yet have high chroma energy,
-   but this is unlikely in non-artificial images, and not a case that has been
-   addressed by any research to my knowledge.
-  The output of the masking process is two scale factors, which are fed into
-   the various R-D optimizations.
-  The first, rd_scale, is applied to D in the equation
-    D*rd_scale+lambda*R.
-  This is the form that must be used to properly combine scores from multiple
-   blocks, and can be interpreted as scaling distortions by their visibility.
-  The inverse, rd_iscale, is applied to lambda in the equation
-    D+rd_iscale*lambda*R.
-  This is equivalent to the first form within a single block, but much faster
-   to use when evaluating many possible distortions (e.g., during actual
-   quantization, where separate distortions are evaluated for every
-   coefficient).
-  The two macros OC_RD_SCALE(rd_scale,d) and OC_RD_ISCALE(rd_iscale,lambda) are
-   used to perform the multiplications with the proper re-scaling for the range
-   of the scaling factors.
-  Many researchers apply masking values directly to the quantizers used, and
-   not to the R-D cost.
-  Since we generally use MSE for D, rd_scale must use the square of their
-   values to generate an equivalent effect.*/
-static unsigned oc_mb_masking(unsigned _rd_scale[5],unsigned _rd_iscale[5],
- const ogg_uint16_t _chroma_rd_scale[2],const unsigned _activity[4],
- unsigned _activity_avg,unsigned _luma,unsigned _luma_avg){
-  unsigned activity_sum;
-  unsigned la;
-  unsigned lb;
-  unsigned d;
-  int      bi;
-  int      bi_min;
-  int      bi_min2;
-  /*The ratio lb/la is meant to approximate
-     ((((_luma-16)/219)*(255/128))**0.649**0.4**2), which is the
-     effective luminance masking from~\cite{LKW06} (including the self-masking
-     deflator).
-    The following actually turns out to be a pretty good approximation for
-     _luma>75 or so.
-    For smaller values luminance does not really follow Weber's Law anyway, and
-     this approximation gives a much less aggressive bitrate boost in this
-     region.
-    Though some researchers claim that contrast sensitivity actually decreases
-     for very low luminance values, in my experience excessive brightness on
-     LCDs or buggy color conversions (e.g., treating Y' as full-range instead
-     of the CCIR 601 range) make artifacts in such regions extremely visible.
-    We substitute _luma_avg for 128 to allow the strength of the masking to
-     vary with the actual average image luminance, within certain limits (the
-     caller has clamped _luma_avg to the range [90,160], inclusive).
-    @ARTICLE{LKW06,
-      author="Zhen Liu and Lina J. Karam and Andrew B. Watson",
-      title="{JPEG2000} Encoding With Perceptual Distortion Control",
-      journal="{IEEE} Transactions on Image Processing",
-      volume=15,
-      number=7,
-      pages="1763--1778",
-      month=Jul,
-      year=2006
-    }*/
-#if 0
-  la=_luma+4*_luma_avg;
-  lb=4*_luma+_luma_avg;
-#else
-  /*Disable luminance masking.*/
-  la=lb=1;
-#endif
-  activity_sum=0;
-  for(bi=0;bi<4;bi++){
-    unsigned a;
-    unsigned b;
-    activity_sum+=_activity[bi];
-    /*Apply activity masking.*/
-    a=_activity[bi]+4*_activity_avg;
-    b=4*_activity[bi]+_activity_avg;
-    d=OC_RD_SCALE(b,1);
-    /*And luminance masking.*/
-    d=(a+(d>>1))/d;
-    _rd_scale[bi]=(d*la+(lb>>1))/lb;
-    /*And now the inverse.*/
-    d=OC_MAXI(OC_RD_ISCALE(a,1),1);
-    d=(b+(d>>1))/d;
-    _rd_iscale[bi]=(d*lb+(la>>1))/la;
-  }
-  /*Now compute scaling factors for chroma blocks.
-    We start by finding the two smallest iscales from the luma blocks.*/
-  bi_min=_rd_iscale[1]<_rd_iscale[0];
-  bi_min2=1-bi_min;
-  for(bi=2;bi<4;bi++){
-    if(_rd_iscale[bi]<_rd_iscale[bi_min]){
-      bi_min2=bi_min;
-      bi_min=bi;
-    }
-    else if(_rd_iscale[bi]<_rd_iscale[bi_min2])bi_min2=bi;
-  }
-  /*If the minimum iscale is less than 1.0, use the second smallest instead,
-     and force the value to at least 1.0 (inflating chroma is a waste).*/
-  if(_rd_iscale[bi_min]<(1<<OC_RD_ISCALE_BITS))bi_min=bi_min2;
-  d=OC_MINI(_rd_scale[bi_min],1<<OC_RD_SCALE_BITS);
-  _rd_scale[4]=OC_RD_SCALE(d,_chroma_rd_scale[0]);
-  d=OC_MAXI(_rd_iscale[bi_min],1<<OC_RD_ISCALE_BITS);
-  _rd_iscale[4]=OC_RD_ISCALE(d,_chroma_rd_scale[1]);
-  return activity_sum;
-}
-
-static int oc_mb_intra_satd(oc_enc_ctx *_enc,unsigned _mbi,
- unsigned _frag_satd[12]){
-  const unsigned char   *src;
-  const ptrdiff_t       *frag_buf_offs;
-  const ptrdiff_t       *sb_map;
-  const oc_mb_map_plane *mb_map;
-  const unsigned char   *map_idxs;
-  int                    map_nidxs;
-  int                    mapii;
-  int                    mapi;
-  int                    ystride;
-  int                    pli;
-  int                    bi;
-  ptrdiff_t              fragi;
-  ptrdiff_t              frag_offs;
-  unsigned               luma;
-  int                    dc;
-  frag_buf_offs=_enc->state.frag_buf_offs;
-  sb_map=_enc->state.sb_maps[_mbi>>2][_mbi&3];
-  src=_enc->state.ref_frame_data[OC_FRAME_IO];
-  ystride=_enc->state.ref_ystride[0];
-  luma=0;
-  for(bi=0;bi<4;bi++){
-    fragi=sb_map[bi];
-    frag_offs=frag_buf_offs[fragi];
-    _frag_satd[bi]=oc_enc_frag_intra_satd(_enc,&dc,src+frag_offs,ystride);
-    luma+=dc;
-  }
-  mb_map=(const oc_mb_map_plane *)_enc->state.mb_maps[_mbi];
-  map_idxs=OC_MB_MAP_IDXS[_enc->state.info.pixel_fmt];
-  map_nidxs=OC_MB_MAP_NIDXS[_enc->state.info.pixel_fmt];
-  /*Note: This assumes ref_ystride[1]==ref_ystride[2].*/
-  ystride=_enc->state.ref_ystride[1];
-  for(mapii=4;mapii<map_nidxs;mapii++){
-    mapi=map_idxs[mapii];
-    pli=mapi>>2;
-    bi=mapi&3;
-    fragi=mb_map[pli][bi];
-    frag_offs=frag_buf_offs[fragi];
-    _frag_satd[mapii]=oc_enc_frag_intra_satd(_enc,&dc,src+frag_offs,ystride);
-  }
-  return luma;
-}
-
 /*Select luma block-level quantizers for a MB in an INTRA frame.*/
 static unsigned oc_analyze_intra_mb_luma(oc_enc_ctx *_enc,
  const oc_qii_state *_qs,unsigned _mbi,const unsigned _rd_scale[4]){
@@ -1641,9 +1389,6 @@ static void oc_enc_sb_transform_quantize_intra_chroma(oc_enc_ctx *_enc,
 void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
   ogg_int64_t             activity_sum;
   ogg_int64_t             luma_sum;
-  unsigned                activity_avg;
-  unsigned                luma_avg;
-  const ogg_uint16_t     *chroma_rd_scale;
   ogg_uint16_t           *mcu_rd_scale;
   ogg_uint16_t           *mcu_rd_iscale;
   const unsigned char    *map_idxs;
@@ -1651,7 +1396,6 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
   oc_sb_flags            *sb_flags;
   signed char            *mb_modes;
   const oc_mb_map        *mb_maps;
-  const oc_sb_map        *sb_maps;
   oc_fragment            *frags;
   unsigned                stripe_sby;
   unsigned                mcu_nvsbs;
@@ -1664,9 +1408,6 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
   oc_enc_pipeline_init(_enc,&_enc->pipe);
   oc_enc_mode_rd_init(_enc);
   activity_sum=luma_sum=0;
-  activity_avg=_enc->activity_avg;
-  luma_avg=OC_CLAMPI(90<<8,_enc->luma_avg,160<<8);
-  chroma_rd_scale=_enc->chroma_rd_scale[OC_INTRA_FRAME][_enc->state.qis[0]];
   mcu_rd_scale=_enc->mcu_rd_scale;
   mcu_rd_iscale=_enc->mcu_rd_iscale;
   /*Choose MVs and MB modes and quantize and code luma.
@@ -1679,7 +1420,6 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
   sb_flags=_enc->state.sb_flags;
   mb_modes=_enc->state.mb_modes;
   mb_maps=(const oc_mb_map *)_enc->state.mb_maps;
-  sb_maps=(const oc_sb_map *)_enc->state.sb_maps;
   frags=_enc->state.frags;
   notstart=0;
   notdone=1;
@@ -1689,51 +1429,24 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
     unsigned  sbi;
     unsigned  sbi_end;
     notdone=oc_enc_pipeline_set_stripe(_enc,&_enc->pipe,stripe_sby);
+    sbi=_enc->pipe.sbi0[0];
     sbi_end=_enc->pipe.sbi_end[0];
     cfroffset=_enc->pipe.froffset[1];
-    for(sbi=_enc->pipe.sbi0[0];sbi<sbi_end;sbi++){
+    oc_enc_worker_start(_enc, sbi, sbi_end, _recode, 1);
+    for(;sbi<sbi_end;sbi++){
       unsigned quadi;
-      unsigned sb_rd_scale[4][5];
-      unsigned sb_rd_iscale[4][5];
       /*Mode addressing is through Y plane, always 4 MB per SB.*/
       for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
-        unsigned  activity[4];
-        unsigned  *rd_scale = sb_rd_scale[quadi];
-        unsigned  *rd_iscale = sb_rd_iscale[quadi];
-        unsigned  luma;
-        unsigned  mbi;
-        int       bi;
-        mbi=sbi<<2|quadi;
-        /*Activity masking.*/
-        if(_enc->sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
-          luma=oc_mb_activity(_enc,mbi,activity);
-        }
-        else{
-          unsigned intra_satd[12];
-          luma=oc_mb_intra_satd(_enc,mbi,intra_satd);
-          oc_mb_activity_fast(_enc,mbi,activity,intra_satd);
-          for(bi=0;bi<4;bi++)frags[sb_maps[mbi>>2][mbi&3][bi]].qii=0;
-        }
-        activity_sum+=oc_mb_masking(rd_scale,rd_iscale,
-         chroma_rd_scale,activity,activity_avg,luma,luma_avg);
-        luma_sum+=luma;
-        /*Motion estimation:
-          We do a basic 1MV search for all macroblocks, coded or not,
-           keyframe or not, unless we aren't using motion estimation at all.*/
-        if(!_recode&&_enc->state.curframe_num>0&&
-         _enc->sp_level<OC_SP_LEVEL_NOMC&&_enc->keyframe_frequency_force>1){
-          oc_mcenc_search(_enc,mbi);
-        }
-      }
-      for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
-        unsigned  *rd_scale = sb_rd_scale[quadi];
-        unsigned  *rd_iscale = sb_rd_iscale[quadi];
+        unsigned  *rd_scale;
+        unsigned  *rd_iscale;
         unsigned  mbi;
         int       mapii;
         int       mapi;
         int       bi;
         ptrdiff_t fragi;
         mbi=sbi<<2|quadi;
+        oc_enc_worker_wait(_enc, mbi);
+        oc_enc_worker_get_rd_acc(_enc, mbi, &rd_scale, &rd_iscale, &luma_sum, &activity_sum);
         if(_enc->sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
           oc_analyze_intra_mb_luma(_enc,_enc->pipe.qs+0,mbi,rd_scale);
         }
@@ -1975,87 +1688,6 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
   _modec->rate=rate;
 }
 
-static void oc_skip_cost_ssd(oc_enc_ctx *_enc,
- unsigned _mbi,const unsigned _rd_scale[4],unsigned _ssd[12]){
-  const unsigned char   *src;
-  const unsigned char   *ref;
-  int                    ystride;
-  const oc_fragment     *frags;
-  const ptrdiff_t       *frag_buf_offs;
-  const ptrdiff_t       *sb_map;
-  const oc_mb_map_plane *mb_map;
-  const unsigned char   *map_idxs;
-  oc_mv                 *mvs;
-  int                    map_nidxs;
-  unsigned               uncoded_ssd;
-  int                    mapii;
-  int                    mapi;
-  int                    pli;
-  int                    bi;
-  ptrdiff_t              fragi;
-  ptrdiff_t              frag_offs;
-  int                    borderi;
-  src=_enc->state.ref_frame_data[OC_FRAME_IO];
-  ref=_enc->state.ref_frame_data[OC_FRAME_PREV];
-  ystride=_enc->state.ref_ystride[0];
-  frags=_enc->state.frags;
-  frag_buf_offs=_enc->state.frag_buf_offs;
-  sb_map=_enc->state.sb_maps[_mbi>>2][_mbi&3];
-  mvs=_enc->mb_info[_mbi].block_mv;
-  for(bi=0;bi<4;bi++){
-    fragi=sb_map[bi];
-    borderi=frags[fragi].borderi;
-    frag_offs=frag_buf_offs[fragi];
-    if(borderi<0){
-      uncoded_ssd=oc_enc_frag_ssd(_enc,src+frag_offs,ref+frag_offs,ystride);
-    }
-    else{
-      uncoded_ssd=oc_enc_frag_border_ssd(_enc,
-       src+frag_offs,ref+frag_offs,ystride,_enc->state.borders[borderi].mask);
-    }
-    /*Scale to match DCT domain and RD.*/
-    uncoded_ssd=OC_RD_SKIP_SCALE(uncoded_ssd,_rd_scale[bi]);
-    /*Motion is a special case; if there is more than a full-pixel motion
-       against the prior frame, penalize skipping.
-      TODO: The factor of two here is a kludge, but it tested out better than a
-       hard limit.*/
-    if(mvs[bi]!=0)uncoded_ssd*=2;
-    _ssd[bi]=uncoded_ssd;
-  }
-  mb_map=(const oc_mb_map_plane *)_enc->state.mb_maps[_mbi];
-  map_nidxs=OC_MB_MAP_NIDXS[_enc->state.info.pixel_fmt];
-  map_idxs=OC_MB_MAP_IDXS[_enc->state.info.pixel_fmt];
-  map_nidxs=(map_nidxs-4>>1)+4;
-  mapii=4;
-  mvs=_enc->mb_info[_mbi].unref_mv;
-  for(pli=1;pli<3;pli++){
-    ystride=_enc->state.ref_ystride[pli];
-    for(;mapii<map_nidxs;mapii++){
-      mapi=map_idxs[mapii];
-      bi=mapi&3;
-      fragi=mb_map[pli][bi];
-      borderi=frags[fragi].borderi;
-      frag_offs=frag_buf_offs[fragi];
-      if(borderi<0){
-        uncoded_ssd=oc_enc_frag_ssd(_enc,src+frag_offs,ref+frag_offs,ystride);
-      }
-      else{
-        uncoded_ssd=oc_enc_frag_border_ssd(_enc,
-         src+frag_offs,ref+frag_offs,ystride,_enc->state.borders[borderi].mask);
-      }
-      /*Scale to match DCT domain and RD.*/
-      uncoded_ssd=OC_RD_SKIP_SCALE(uncoded_ssd,_rd_scale[4]);
-      /*Motion is a special case; if there is more than a full-pixel motion
-         against the prior frame, penalize skipping.
-        TODO: The factor of two here is a kludge, but it tested out better than
-         a hard limit*/
-      if(mvs[OC_FRAME_PREV]!=0)uncoded_ssd*=2;
-      _ssd[mapii]=uncoded_ssd;
-    }
-    map_nidxs=(map_nidxs-4<<1)+4;
-  }
-}
-
 static void oc_skip_cost(oc_enc_ctx *_enc,oc_enc_pipeline_state *_pipe,
  unsigned _mbi,const unsigned _ssd[12]){
   const ptrdiff_t       *sb_map;
@@ -2101,101 +1733,6 @@ static void oc_cost_intra(oc_enc_ctx *_enc,oc_mode_choice *_modec,
   oc_mode_set_cost(_modec,_enc->lambda);
 }
 
-static void oc_cost_inter_satd(oc_enc_ctx *_enc, unsigned _mbi, int _mb_mode, oc_mv _mv, unsigned frag_satd[12]){
-  const unsigned char   *src;
-  const unsigned char   *ref;
-  int                    ystride;
-  const ptrdiff_t       *frag_buf_offs;
-  const ptrdiff_t       *sb_map;
-  const oc_mb_map_plane *mb_map;
-  const unsigned char   *map_idxs;
-  int                    map_nidxs;
-  int                    mapii;
-  int                    mapi;
-  int                    mv_offs[2];
-  int                    pli;
-  int                    bi;
-  ptrdiff_t              fragi;
-  ptrdiff_t              frag_offs;
-  int                    dc;
-  src=_enc->state.ref_frame_data[OC_FRAME_IO];
-  ref=_enc->state.ref_frame_data[OC_FRAME_FOR_MODE(_mb_mode)];
-  ystride=_enc->state.ref_ystride[0];
-  frag_buf_offs=_enc->state.frag_buf_offs;
-  sb_map=_enc->state.sb_maps[_mbi>>2][_mbi&3];
-  if(oc_state_get_mv_offsets(&_enc->state,mv_offs,0,_mv)>1){
-    for(bi=0;bi<4;bi++){
-      fragi=sb_map[bi];
-      frag_offs=frag_buf_offs[fragi];
-      if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-        frag_satd[bi]=oc_enc_frag_satd2(_enc,&dc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ref+frag_offs+mv_offs[1],ystride);
-        frag_satd[bi]+=abs(dc);
-      }
-      else{
-        frag_satd[bi]=oc_enc_frag_sad2_thresh(_enc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ref+frag_offs+mv_offs[1],ystride,UINT_MAX);
-      }
-    }
-  }
-  else{
-    for(bi=0;bi<4;bi++){
-      fragi=sb_map[bi];
-      frag_offs=frag_buf_offs[fragi];
-      if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-        frag_satd[bi]=oc_enc_frag_satd(_enc,&dc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ystride);
-        frag_satd[bi]+=abs(dc);
-      }
-      else{
-        frag_satd[bi]=oc_enc_frag_sad(_enc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ystride);
-      }
-    }
-  }
-  mb_map=(const oc_mb_map_plane *)_enc->state.mb_maps[_mbi];
-  map_idxs=OC_MB_MAP_IDXS[_enc->state.info.pixel_fmt];
-  map_nidxs=OC_MB_MAP_NIDXS[_enc->state.info.pixel_fmt];
-  /*Note: This assumes ref_ystride[1]==ref_ystride[2].*/
-  ystride=_enc->state.ref_ystride[1];
-  if(oc_state_get_mv_offsets(&_enc->state,mv_offs,1,_mv)>1){
-    for(mapii=4;mapii<map_nidxs;mapii++){
-      mapi=map_idxs[mapii];
-      pli=mapi>>2;
-      bi=mapi&3;
-      fragi=mb_map[pli][bi];
-      frag_offs=frag_buf_offs[fragi];
-      if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-        frag_satd[mapii]=oc_enc_frag_satd2(_enc,&dc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ref+frag_offs+mv_offs[1],ystride);
-        frag_satd[mapii]+=abs(dc);
-      }
-      else{
-        frag_satd[mapii]=oc_enc_frag_sad2_thresh(_enc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ref+frag_offs+mv_offs[1],ystride,UINT_MAX);
-      }
-    }
-  }
-  else{
-    for(mapii=4;mapii<map_nidxs;mapii++){
-      mapi=map_idxs[mapii];
-      pli=mapi>>2;
-      bi=mapi&3;
-      fragi=mb_map[pli][bi];
-      frag_offs=frag_buf_offs[fragi];
-      if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-        frag_satd[mapii]=oc_enc_frag_satd(_enc,&dc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ystride);
-        frag_satd[mapii]+=abs(dc);
-      }
-      else{
-        frag_satd[mapii]=oc_enc_frag_sad(_enc,src+frag_offs,
-         ref+frag_offs+mv_offs[0],ystride);
-      }
-    }
-  }
-}
-
 static void oc_cost_inter(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,int _mb_mode,oc_mv _mv,
  const oc_fr_state *_fr,const oc_qii_state *_qs,
@@ -2209,18 +1746,10 @@ static void oc_cost_inter(oc_enc_ctx *_enc,oc_mode_choice *_modec,
   oc_mode_set_cost(_modec,_enc->lambda);
 }
 
-static void oc_cost_inter_nomv_satd(oc_enc_ctx *_enc,unsigned _mbi,int _mb_mode,unsigned _frag_satd[12]){
-  oc_cost_inter_satd(_enc,_mbi,_mb_mode,0,_frag_satd);
-}
-
 static void oc_cost_inter_nomv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,int _mb_mode,const oc_fr_state *_fr,const oc_qii_state *_qs,
  const unsigned _skip_ssd[12],const unsigned _rd_scale[4],const unsigned _frag_satd[12]){
   oc_cost_inter(_enc,_modec,_mbi,_mb_mode,0,_fr,_qs,_skip_ssd,_rd_scale,_frag_satd);
-}
-
-static void oc_cost_inter1mv_satd(oc_enc_ctx *_enc,unsigned _mbi,int _mb_mode,oc_mv _mv,unsigned _frag_satd[12]){
-  oc_cost_inter_satd(_enc,_mbi,_mb_mode,_mv,_frag_satd);
 }
 
 static int oc_cost_inter1mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
@@ -2346,9 +1875,6 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
   ogg_int64_t             intrabits;
   ogg_int64_t             activity_sum;
   ogg_int64_t             luma_sum;
-  unsigned                activity_avg;
-  unsigned                luma_avg;
-  const ogg_uint16_t     *chroma_rd_scale;
   ogg_uint16_t           *mcu_rd_scale;
   ogg_uint16_t           *mcu_rd_iscale;
   const unsigned char    *map_idxs;
@@ -2384,9 +1910,6 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
   _enc->mv_bits[0]=_enc->mv_bits[1]=0;
   interbits=intrabits=0;
   activity_sum=luma_sum=0;
-  activity_avg=_enc->activity_avg;
-  luma_avg=OC_CLAMPI(90<<8,_enc->luma_avg,160<<8);
-  chroma_rd_scale=_enc->chroma_rd_scale[OC_INTER_FRAME][_enc->state.qis[0]];
   mcu_rd_scale=_enc->mcu_rd_scale;
   mcu_rd_iscale=_enc->mcu_rd_iscale;
   last_mv=prior_mv=0;
@@ -2414,80 +1937,21 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
   for(stripe_sby=0;notdone;stripe_sby+=mcu_nvsbs){
     ptrdiff_t cfroffset;
     notdone=oc_enc_pipeline_set_stripe(_enc,&_enc->pipe,stripe_sby);
+    sbi=_enc->pipe.sbi0[0];
     sbi_end=_enc->pipe.sbi_end[0];
     cfroffset=_enc->pipe.froffset[1];
-    for(sbi=_enc->pipe.sbi0[0];sbi<sbi_end;sbi++){
+    oc_enc_worker_start(_enc, sbi, sbi_end, _recode, 0);
+    for(;sbi<sbi_end;sbi++){
       unsigned quadi;
-      unsigned sb_rd_scale[4][5];
-      unsigned sb_rd_iscale[4][5];
-      unsigned sb_intra_satd[4][12];
-      unsigned sb_i0mv_satd[4][12];
-      unsigned sb_i1mv_satd[4][12];
-      unsigned sb_g0mv_satd[4][12];
-      unsigned sb_g1mv_satd[4][12];
-      unsigned sb_skip_ssd[4][12];
       /*Mode addressing is through Y plane, always 4 MB per SB.*/
-      for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
-        unsigned activity[4];
-        unsigned *rd_scale = sb_rd_scale[quadi];
-        unsigned *intra_satd = sb_intra_satd[quadi];
-        unsigned luma;
-        unsigned mbi;
-        mbi=sbi<<2|quadi;
-        luma=oc_mb_intra_satd(_enc,mbi,intra_satd);
-        /*Activity masking.*/
-        if(sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
-          oc_mb_activity(_enc,mbi,activity);
-        }
-        else oc_mb_activity_fast(_enc,mbi,activity,intra_satd);
-        luma_sum+=luma;
-        activity_sum+=oc_mb_masking(rd_scale,sb_rd_iscale[quadi],
-         chroma_rd_scale,activity,activity_avg,luma,luma_avg);
-        /*Motion estimation:
-          We always do a basic 1MV search for all macroblocks, coded or not,
-           keyframe or not.*/
-        if(!_recode&&sp_level<OC_SP_LEVEL_NOMC)oc_mcenc_search(_enc,mbi);
-        /*Find the block choice with the lowest estimated coding cost.
-          If a Cb or Cr block is coded but no Y' block from a macro block then
-           the mode MUST be OC_MODE_INTER_NOMV.
-          This is the default state to which the mode data structure is
-           initialised in encoder and decoder at the start of each frame.*/
-        /*Block coding cost is estimated from correlated SATD metrics.*/
-        /*At this point, all blocks that are in frame are still marked coded.*/
-        if(!_recode){
-          embs[mbi].unref_mv[OC_FRAME_GOLD]=
-           embs[mbi].analysis_mv[0][OC_FRAME_GOLD];
-          embs[mbi].unref_mv[OC_FRAME_PREV]=
-           embs[mbi].analysis_mv[0][OC_FRAME_PREV];
-          embs[mbi].refined=0;
-        }
-        /*Estimate the cost in a delta frame for various modes.*/
-        oc_skip_cost_ssd(_enc,mbi,rd_scale,sb_skip_ssd[quadi]);
-        oc_cost_inter_nomv_satd(_enc,mbi,OC_MODE_INTER_NOMV,sb_i0mv_satd[quadi]);
-        oc_cost_inter_nomv_satd(_enc,mbi,OC_MODE_GOLDEN_NOMV,sb_g0mv_satd[quadi]);
-        if(sp_level<OC_SP_LEVEL_NOMC){
-          if(!(embs[mbi].refined&(1<<OC_MODE_INTER_MV))){
-            oc_mcenc_refine1mv(_enc,mbi,OC_FRAME_PREV);
-            embs[mbi].refined|=(1<<OC_MODE_INTER_MV);
-          }
-          if(!(embs[mbi].refined&(1<<OC_MODE_GOLDEN_MV))){
-            oc_mcenc_refine1mv(_enc,mbi,OC_FRAME_GOLD);
-            embs[mbi].refined|=(1<<OC_MODE_GOLDEN_MV);
-          }
-
-          oc_cost_inter1mv_satd(_enc,mbi,OC_MODE_INTER_MV,
-                                embs[mbi].analysis_mv[0][OC_FRAME_PREV],sb_i1mv_satd[quadi]);
-          oc_cost_inter1mv_satd(_enc,mbi,OC_MODE_GOLDEN_MV,
-                                embs[mbi].analysis_mv[0][OC_FRAME_GOLD],sb_g1mv_satd[quadi]);
-        }
-      }
-
       for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi) {
         oc_mode_choice modes[8];
-        unsigned       *skip_ssd = sb_skip_ssd[quadi];
-        unsigned       *rd_scale = sb_rd_scale[quadi];
-        unsigned       *rd_iscale = sb_rd_iscale[quadi];
-        unsigned       *intra_satd = sb_intra_satd[quadi];
+        unsigned      *rd_scale;
+        unsigned      *rd_iscale;
+        unsigned      *skip_ssd;
+        unsigned      *intra_satd;
+        unsigned      *i0mv_satd;
+        unsigned      *g0mv_satd;
         int            mb_mv_bits_0;
         int            mb_gmv_bits_0;
         int            inter_mv_pref;
@@ -2501,6 +1965,9 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         ptrdiff_t      fragi;
         mbi=sbi<<2|quadi;
         mv=0;
+        oc_enc_worker_wait(_enc, mbi);
+        oc_enc_worker_get_rd_acc(_enc, mbi, &rd_scale, &rd_iscale, &luma_sum, &activity_sum);
+        oc_enc_worker_get_nomv_satd(_enc, mbi, &skip_ssd, &intra_satd, &i0mv_satd, &g0mv_satd);
         /*Estimate the cost of coding this MB in a keyframe.*/
         if(_allow_keyframe){
           oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,
@@ -2517,16 +1984,18 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
          _enc->pipe.fr+0,_enc->pipe.qs+0,intra_satd,skip_ssd,rd_scale);
         oc_cost_inter_nomv(_enc,modes+OC_MODE_INTER_NOMV,mbi,
          OC_MODE_INTER_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-         skip_ssd,rd_scale,sb_i0mv_satd[quadi]);
+         skip_ssd,rd_scale,i0mv_satd);
         oc_cost_inter_nomv(_enc,modes+OC_MODE_GOLDEN_NOMV,mbi,
          OC_MODE_GOLDEN_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-         skip_ssd,rd_scale,sb_g0mv_satd[quadi]);
+         skip_ssd,rd_scale,g0mv_satd);
 
         if(sp_level<OC_SP_LEVEL_NOMC){
           unsigned frag_satd[12];
+          unsigned *mv_satd;
+          oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_INTER_MV, 0, &mv_satd);
           mb_mv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_INTER_MV,mbi,
-           OC_MODE_INTER_MV,embs[mbi].analysis_mv[0][OC_FRAME_PREV],
-           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,sb_i1mv_satd[quadi]);
+           OC_MODE_INTER_MV,embs[mbi].unref_mv[OC_FRAME_PREV],
+           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
           oc_cost_inter_satd(_enc,mbi,OC_MODE_INTER_MV_LAST,last_mv,frag_satd);
           oc_cost_inter(_enc,modes+OC_MODE_INTER_MV_LAST,mbi,
            OC_MODE_INTER_MV_LAST,last_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
@@ -2535,16 +2004,17 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
           oc_cost_inter(_enc,modes+OC_MODE_INTER_MV_LAST2,mbi,
            OC_MODE_INTER_MV_LAST2,prior_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
            skip_ssd,rd_scale,frag_satd);
+          oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_GOLDEN_MV, 0, &mv_satd);
           mb_gmv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_GOLDEN_MV,mbi,
-           OC_MODE_GOLDEN_MV,embs[mbi].analysis_mv[0][OC_FRAME_GOLD],
-           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,sb_g1mv_satd[quadi]);
+           OC_MODE_GOLDEN_MV,embs[mbi].unref_mv[OC_FRAME_GOLD],
+           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
           /*The explicit MV modes (2,6,7) have not yet gone through halfpel
              refinement.
             We choose the explicit MV mode that's already furthest ahead on
              R-D cost and refine only that one.
             We have to be careful to remember which ones we've refined so that
              we don't refine it again if we re-encode this frame.*/
-          inter_mv_pref=_enc->lambda*3;
+          inter_mv_pref=_enc->lambda*2;
           if(sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
             oc_cost_inter4mv(_enc,modes+OC_MODE_INTER_MV_FOUR,mbi,
              embs[mbi].block_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
@@ -2563,6 +2033,17 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
              embs[mbi].ref_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
              skip_ssd,rd_scale);
           }
+          else if(modes[OC_MODE_GOLDEN_MV].cost+inter_mv_pref<
+                  modes[OC_MODE_INTER_MV].cost){
+            oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_GOLDEN_MV, 1, &mv_satd);
+            mb_gmv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_GOLDEN_MV,mbi,
+                                           OC_MODE_GOLDEN_MV,embs[mbi].analysis_mv[0][OC_FRAME_GOLD],
+                                           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
+          }
+          oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_INTER_MV, 1, &mv_satd);
+          mb_mv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_INTER_MV,mbi,
+                                        OC_MODE_INTER_MV,embs[mbi].analysis_mv[0][OC_FRAME_PREV],
+                                        _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
           /*Finally, pick the mode with the cheapest estimated R-D cost.*/
           mb_mode=OC_MODE_INTER_NOMV;
           if(modes[OC_MODE_INTRA].cost<modes[OC_MODE_INTER_NOMV].cost){

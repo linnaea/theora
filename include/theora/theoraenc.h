@@ -376,6 +376,13 @@ extern "C" {
  * \retval TH_ENOTFORMAT \a _buf did not contain a Theora header at all.
  * \retval TH_EIMPL   Not supported by this implementation.*/
 #define TH_ENCCTL_SET_COMPAT_CONFIG (32)
+/**Sets the number of threads the encoder uses for motion search.
+ *
+ * \param[in]  _buf <tt>int</tt>: Requested threads, pass 0 if not requesting.
+ * \param[out] _buf <tt>int</tt>: Actual threads that will be used.
+ * \retval TH_EFAULT \a _enc or \a _buf is <tt>NULL</tt>.
+ * \retval TH_EINVAL \a _buf_sz is not <tt>sizeof(int)</tt>.*/
+#define TH_ENCCTL_SET_NUM_THREADS (1032)
 
 /*@}*/
 

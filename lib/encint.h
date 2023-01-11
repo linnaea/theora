@@ -605,7 +605,9 @@ int oc_enc_update_rc_state(oc_enc_ctx *_enc,
 int oc_enc_rc_2pass_out(oc_enc_ctx *_enc,unsigned char **_buf);
 int oc_enc_rc_2pass_in(oc_enc_ctx *_enc,unsigned char *_buf,size_t _bytes);
 
-
+struct oc_enc_worker_ctrl;
+int oc_enc_worker_set_threads(oc_enc_ctx* enc, int n);
+void oc_enc_worker_free(oc_enc_ctx* enc);
 
 /*The internal encoder state.*/
 struct th_enc_ctx{
@@ -727,6 +729,8 @@ struct th_enc_ctx{
 # endif
   /*Table for encoder data used by accelerated functions.*/
   oc_enc_opt_data          opt_data;
+  /*Number of threads to use.*/
+  struct oc_enc_worker_ctrl *threads;
 };
 
 
