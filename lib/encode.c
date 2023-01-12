@@ -1211,7 +1211,7 @@ static int oc_enc_init(oc_enc_ctx *_enc,const th_info *_info){
   _enc->coded_inter_frame=0;
   /*Default to 3 threads.*/
   _enc->threads=NULL;
-  oc_enc_worker_set_threads(_enc, 3);
+  oc_enc_worker_set_threads(_enc, 4);
   if(_enc->mb_info==NULL||_enc->frag_dc==NULL||_enc->coded_mbis==NULL
    ||_enc->mcu_skip_ssd==NULL||_enc->dct_tokens[0]==NULL
    ||_enc->dct_tokens[1]==NULL||_enc->dct_tokens[2]==NULL

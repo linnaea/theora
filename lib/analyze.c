@@ -707,7 +707,7 @@ static int oc_enc_block_transform_quantize(oc_enc_ctx *_enc,
   idct=data+128;
   if(qii&~3){
 #if !defined(OC_COLLECT_METRICS)
-    if(_enc->sp_level>=OC_SP_LEVEL_EARLY_SKIP){
+    if(_fr && _enc->sp_level>=OC_SP_LEVEL_EARLY_SKIP){
       /*Enable early skip detection.*/
       frags[_fragi].coded=0;
       frags[_fragi].refi=OC_FRAME_NONE;
@@ -1117,33 +1117,6 @@ static void oc_enc_mode_rd_init(oc_enc_ctx *_enc){
   }
 }
 
-/*Estimate the R-D cost of the DCT coefficients given the SATD of a block after
-   prediction.*/
-static unsigned oc_dct_cost2(oc_enc_ctx *_enc,unsigned *_ssd,
- int _qii,int _pli,int _qti,unsigned _satd){
-  unsigned rmse;
-  int      shift;
-  int      bin;
-  int      dx;
-  int      y0;
-  int      z0;
-  int      dy;
-  int      dz;
-  /*SATD metrics for chroma planes vary much less than luma, so we scale them
-     by 4 to distribute them into the mode decision bins more evenly.*/
-  _satd<<=_pli+1&2;
-  shift=_enc->sp_level<OC_SP_LEVEL_NOSATD?OC_SATD_SHIFT:OC_SAD_SHIFT;
-  bin=OC_MINI(_satd>>shift,OC_COMP_BINS-2);
-  dx=_satd-(bin<<shift);
-  y0=_enc->mode_rd[_qii][_pli][_qti][bin].rate;
-  z0=_enc->mode_rd[_qii][_pli][_qti][bin].rmse;
-  dy=_enc->mode_rd[_qii][_pli][_qti][bin+1].rate-y0;
-  dz=_enc->mode_rd[_qii][_pli][_qti][bin+1].rmse-z0;
-  rmse=OC_MAXI(z0+(dz*dx>>shift),0);
-  *_ssd=rmse*rmse>>2*OC_RMSE_SCALE-OC_BIT_SCALE;
-  return OC_MAXI(y0+(dy*dx>>shift),0);
-}
-
 /*activity_avg must be positive, or flat regions could get a zero weight, which
    confounds analysis.
   We set the minimum to this value so that it also avoids the need for divide
@@ -1152,59 +1125,37 @@ static unsigned oc_dct_cost2(oc_enc_ctx *_enc,unsigned *_ssd,
 
 /*Select luma block-level quantizers for a MB in an INTRA frame.*/
 static unsigned oc_analyze_intra_mb_luma(oc_enc_ctx *_enc,
- const oc_qii_state *_qs,unsigned _mbi,const unsigned _rd_scale[4]){
-  const unsigned char *src;
-  const ptrdiff_t     *frag_buf_offs;
+ const oc_qii_state *_qs,unsigned _mbi,const unsigned _rd_scale[4],const oc_dct_cost_table *_dct_cost){
   const oc_sb_map     *sb_maps;
   oc_fragment         *frags;
-  ptrdiff_t            frag_offs;
   ptrdiff_t            fragi;
   oc_qii_state         qs[4][3];
   unsigned             cost[4][3];
   unsigned             ssd[4][3];
   unsigned             rate[4][3];
   int                  prev[3][3];
-  unsigned             satd;
-  int                  dc;
   unsigned             best_cost;
   unsigned             best_ssd;
   unsigned             best_rate;
   int                  best_qii;
   int                  qii;
   int                  lambda;
-  int                  ystride;
   int                  nqis;
   int                  bi;
-  frag_buf_offs=_enc->state.frag_buf_offs;
   sb_maps=(const oc_sb_map *)_enc->state.sb_maps;
-  src=_enc->state.ref_frame_data[OC_FRAME_IO];
-  ystride=_enc->state.ref_ystride[0];
   fragi=sb_maps[_mbi>>2][_mbi&3][0];
-  frag_offs=frag_buf_offs[fragi];
-  if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-    satd=oc_enc_frag_intra_satd(_enc,&dc,src+frag_offs,ystride);
-  }
-  else{
-    satd=oc_enc_frag_intra_sad(_enc,src+frag_offs,ystride);
-  }
   nqis=_enc->state.nqis;
   lambda=_enc->lambda;
   for(qii=0;qii<nqis;qii++){
     oc_qii_state_advance(qs[0]+qii,_qs,qii);
-    rate[0][qii]=oc_dct_cost2(_enc,ssd[0]+qii,qii,0,0,satd)
+    ssd[0][qii] = _dct_cost->block[0][qii].ssd;
+    rate[0][qii]=_dct_cost->block[0][qii].cost
      +(qs[0][qii].bits-_qs->bits<<OC_BIT_SCALE);
     ssd[0][qii]=OC_RD_SCALE(ssd[0][qii],_rd_scale[0]);
     cost[0][qii]=OC_MODE_RD_COST(ssd[0][qii],rate[0][qii],lambda);
   }
   for(bi=1;bi<4;bi++){
     fragi=sb_maps[_mbi>>2][_mbi&3][bi];
-    frag_offs=frag_buf_offs[fragi];
-    if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-      satd=oc_enc_frag_intra_satd(_enc,&dc,src+frag_offs,ystride);
-    }
-    else{
-      satd=oc_enc_frag_intra_sad(_enc,src+frag_offs,ystride);
-    }
     for(qii=0;qii<nqis;qii++){
       oc_qii_state qt[3];
       unsigned     cur_ssd;
@@ -1212,7 +1163,8 @@ static unsigned oc_analyze_intra_mb_luma(oc_enc_ctx *_enc,
       int          best_qij;
       int          qij;
       oc_qii_state_advance(qt+0,qs[bi-1]+0,qii);
-      cur_rate=oc_dct_cost2(_enc,&cur_ssd,qii,0,0,satd);
+      cur_rate=_dct_cost->block[bi][qii].cost;
+      cur_ssd=_dct_cost->block[bi][qii].ssd;
       cur_ssd=OC_RD_SCALE(cur_ssd,_rd_scale[bi]);
       best_ssd=ssd[bi-1][0]+cur_ssd;
       best_rate=rate[bi-1][0]+cur_rate
@@ -1261,60 +1213,57 @@ static unsigned oc_analyze_intra_mb_luma(oc_enc_ctx *_enc,
 }
 
 /*Select a block-level quantizer for a single chroma block in an INTRA frame.*/
-static unsigned oc_analyze_intra_chroma_block(oc_enc_ctx *_enc,
- const oc_qii_state *_qs,int _pli,ptrdiff_t _fragi,unsigned _rd_scale){
-  const unsigned char *src;
+static void oc_analyze_intra_mb_chroma(oc_enc_ctx *_enc,
+ const oc_qii_state *_qs,unsigned _mbi,unsigned _rd_scale,const oc_dct_cost_table *_dct){
   oc_fragment         *frags;
-  ptrdiff_t            frag_offs;
+  const unsigned char *map_idxs;
+  const oc_mb_map_plane *mb_map;
   oc_qii_state         qt[3];
-  unsigned             cost[3];
-  unsigned             satd;
-  int                  dc;
-  unsigned             best_cost;
-  int                  best_qii;
   int                  qii;
   int                  lambda;
-  int                  ystride;
   int                  nqis;
-  src=_enc->state.ref_frame_data[OC_FRAME_IO];
-  ystride=_enc->state.ref_ystride[_pli];
-  frag_offs=_enc->state.frag_buf_offs[_fragi];
-  if(_enc->sp_level<OC_SP_LEVEL_NOSATD){
-    satd=oc_enc_frag_intra_satd(_enc,&dc,src+frag_offs,ystride);
-  }
-  else{
-    satd=oc_enc_frag_intra_sad(_enc,src+frag_offs,ystride);
-  }
+  int                  nblocks;
+  int                  pli;
+  int                  bi;
+  nqis=_enc->state.nqis;
+  lambda=_enc->lambda;
+  frags=_enc->state.frags;
+  nblocks=OC_MB_MAP_NIDXS[_enc->state.info.pixel_fmt];
+  map_idxs=OC_MB_MAP_IDXS[_enc->state.info.pixel_fmt];
+  mb_map=_enc->state.mb_maps[_mbi];
+  nblocks=(nblocks-4>>1)+4;
+  bi=4;
+  for(pli=1;pli<3;pli++){
+    for(;bi<nblocks;bi++){
+      unsigned best_cost;
+      int      best_qii;
+      best_cost=UINT_MAX;
+      best_qii=0;
   /*Most chroma blocks have no AC coefficients to speak of anyway, so it's not
      worth spending the bits to change the AC quantizer.
     TODO: This may be worth revisiting when we separate out DC and AC
      predictions from SATD.*/
 #if 0
-  nqis=_enc->state.nqis;
-#else
-  nqis=1;
+      for(qii=0;qii<nqis;qii++){
+        unsigned cur_cost;
+        unsigned cur_rate;
+        unsigned cur_ssd;
+        oc_qii_state_advance(qt+qii,&_qs[pli],qii);
+        cur_ssd=_dct->block[bi][qii].ssd;
+        cur_rate=_dct->block[bi][qii].cost
+                 +(qt[qii].bits-_qs[pli].bits<<OC_BIT_SCALE);
+        cur_ssd=OC_RD_SCALE(cur_ssd,_rd_scale);
+        cur_cost=OC_MODE_RD_COST(cur_ssd,cur_rate,lambda);
+        if(cur_cost<best_cost){
+          best_cost=cur_cost;
+          best_qii=qii;
+        }
+      }
 #endif
-  lambda=_enc->lambda;
-  best_qii=0;
-  for(qii=0;qii<nqis;qii++){
-    unsigned cur_rate;
-    unsigned cur_ssd;
-    oc_qii_state_advance(qt+qii,_qs,qii);
-    cur_rate=oc_dct_cost2(_enc,&cur_ssd,qii,_pli,0,satd)
-     +(qt[qii].bits-_qs->bits<<OC_BIT_SCALE);
-    cur_ssd=OC_RD_SCALE(cur_ssd,_rd_scale);
-    cost[qii]=OC_MODE_RD_COST(cur_ssd,cur_rate,lambda);
-  }
-  best_cost=cost[0];
-  for(qii=1;qii<nqis;qii++){
-    if(cost[qii]<best_cost){
-      best_cost=cost[qii];
-      best_qii=qii;
+      frags[mb_map[pli][map_idxs[bi]&3]].qii=best_qii;
     }
+    nblocks=(nblocks-4<<1)+4;
   }
-  frags=_enc->state.frags;
-  frags[_fragi].qii=best_qii;
-  return best_cost;
 }
 
 static void oc_enc_mb_transform_quantize_intra_luma(oc_enc_ctx *_enc,
@@ -1374,7 +1323,6 @@ static void oc_enc_sb_transform_quantize_intra_chroma(oc_enc_ctx *_enc,
         unsigned             rd_iscale;
         rd_scale=mcu_rd_scale[fragi-froffset];
         rd_iscale=mcu_rd_iscale[fragi-froffset];
-        oc_analyze_intra_chroma_block(_enc,_pipe->qs+_pli,_pli,fragi,rd_scale);
         stackptr=stack;
         oc_enc_block_transform_quantize(_enc,_pipe,_pli,fragi,
          rd_scale,rd_iscale,NULL,NULL,&stackptr);
@@ -1439,6 +1387,7 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
       for(quadi=0;quadi<4;quadi++)if(sb_flags[sbi].quad_valid&1<<quadi){
         unsigned  *rd_scale;
         unsigned  *rd_iscale;
+        oc_dct_cost_table *dct;
         unsigned  mbi;
         int       mapii;
         int       mapi;
@@ -1446,9 +1395,10 @@ void oc_enc_analyze_intra(oc_enc_ctx *_enc,int _recode){
         ptrdiff_t fragi;
         mbi=sbi<<2|quadi;
         oc_enc_worker_wait(_enc, mbi);
-        oc_enc_worker_get_rd_acc(_enc, mbi, &rd_scale, &rd_iscale, &luma_sum, &activity_sum);
+        oc_enc_worker_get_rd_acc(_enc, mbi, &rd_scale, &rd_iscale, &dct, &luma_sum, &activity_sum);
         if(_enc->sp_level<OC_SP_LEVEL_FAST_ANALYSIS){
-          oc_analyze_intra_mb_luma(_enc,_enc->pipe.qs+0,mbi,rd_scale);
+          oc_analyze_intra_mb_luma(_enc,_enc->pipe.qs+0,mbi,rd_scale, dct);
+          oc_analyze_intra_mb_chroma(_enc,_enc->pipe.qs,mbi,rd_scale[4], dct);
         }
         mb_modes[mbi]=OC_MODE_INTRA;
         oc_enc_mb_transform_quantize_intra_luma(_enc,&_enc->pipe,
@@ -1526,13 +1476,12 @@ static const unsigned OC_NOSKIP[12]={
 
 static void oc_analyze_mb_mode_luma(oc_enc_ctx *_enc,
  oc_mode_choice *_modec,const oc_fr_state *_fr,const oc_qii_state *_qs,
- const unsigned _frag_satd[12],const unsigned _skip_ssd[12],
+ const oc_dct_cost_table *_dct,const unsigned _skip_ssd[12],
  const unsigned _rd_scale[4],int _qti){
   oc_fr_state  fr;
   oc_qii_state qs;
   unsigned     ssd;
   unsigned     rate;
-  unsigned     satd;
   unsigned     best_ssd;
   unsigned     best_rate;
   int          best_fri;
@@ -1561,11 +1510,11 @@ static void oc_analyze_mb_mode_luma(oc_enc_ctx *_enc,
     unsigned     cur_rate;
     unsigned     cur_overhead;
     int          qii;
-    satd=_frag_satd[bi];
     *(ft+0)=*&fr;
     oc_fr_code_block(ft+0);
     cur_overhead=ft[0].bits-fr.bits;
-    best_rate=oc_dct_cost2(_enc,&best_ssd,0,0,_qti,satd)
+    best_ssd=_dct->block[bi][0].ssd;
+    best_rate=_dct->block[bi][0].cost
      +(cur_overhead<<OC_BIT_SCALE);
     if(nqis>1){
       oc_qii_state_advance(qt+0,&qs,0);
@@ -1577,7 +1526,8 @@ static void oc_analyze_mb_mode_luma(oc_enc_ctx *_enc,
     best_qii=0;
     for(qii=1;qii<nqis;qii++){
       oc_qii_state_advance(qt+qii,&qs,qii);
-      cur_rate=oc_dct_cost2(_enc,&cur_ssd,qii,0,_qti,satd)
+      cur_ssd=_dct->block[bi][qii].ssd;
+      cur_rate=_dct->block[bi][qii].cost
        +(cur_overhead+qt[qii].bits-qs.bits<<OC_BIT_SCALE);
       cur_ssd=OC_RD_SCALE(cur_ssd,_rd_scale[bi]);
       cur_cost=OC_MODE_RD_COST(ssd+cur_ssd,rate+cur_rate,lambda);
@@ -1598,7 +1548,7 @@ static void oc_analyze_mb_mode_luma(oc_enc_ctx *_enc,
         best_ssd=cur_ssd;
         best_rate=cur_overhead;
         best_fri=1;
-        best_qii+=4;
+        best_qii|=4;
       }
     }
     rate+=best_rate;
@@ -1614,11 +1564,10 @@ static void oc_analyze_mb_mode_luma(oc_enc_ctx *_enc,
 
 static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
  oc_mode_choice *_modec,const oc_fr_state *_fr,const oc_qii_state *_qs,
- const unsigned _frag_satd[12],const unsigned _skip_ssd[12],
+ const oc_dct_cost_table *_dct,const unsigned _skip_ssd[12],
  unsigned _rd_scale,int _qti){
   unsigned ssd;
   unsigned rate;
-  unsigned satd;
   unsigned best_ssd;
   unsigned best_rate;
   int      best_qii;
@@ -1632,15 +1581,7 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
   int      bi;
   int      qii;
   lambda=_enc->lambda;
-  /*Most chroma blocks have no AC coefficients to speak of anyway, so it's not
-     worth spending the bits to change the AC quantizer.
-    TODO: This may be worth revisiting when we separate out DC and AC
-     predictions from SATD.*/
-#if 0
   nqis=_enc->state.nqis;
-#else
-  nqis=1;
-#endif
   ssd=_modec->ssd;
   rate=_modec->rate;
   /*Because (except in 4:4:4 mode) we aren't considering chroma blocks in coded
@@ -1651,14 +1592,20 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
   for(pli=1;pli<3;pli++){
     for(;bi<nblocks;bi++){
       unsigned best_cost;
-      satd=_frag_satd[bi];
-      best_rate=oc_dct_cost2(_enc,&best_ssd,0,pli,_qti,satd)
+      best_ssd=_dct->block[bi][0].ssd;
+      best_rate=_dct->block[bi][0].cost
        +OC_CHROMA_QII_RATE;
       best_ssd=OC_RD_SCALE(best_ssd,_rd_scale);
       best_cost=OC_MODE_RD_COST(ssd+best_ssd,rate+best_rate,lambda);
       best_qii=0;
+  /*Most chroma blocks have no AC coefficients to speak of anyway, so it's not
+     worth spending the bits to change the AC quantizer.
+    TODO: This may be worth revisiting when we separate out DC and AC
+     predictions from SATD.*/
+#if 0
       for(qii=1;qii<nqis;qii++){
-        cur_rate=oc_dct_cost2(_enc,&cur_ssd,qii,pli,_qti,satd)
+        cur_ssd=_dct->block[bi][qii].ssd;
+        cur_rate=_dct->block[bi][0].cost
          +OC_CHROMA_QII_RATE;
         cur_ssd=OC_RD_SCALE(cur_ssd,_rd_scale);
         cur_cost=OC_MODE_RD_COST(ssd+cur_ssd,rate+cur_rate,lambda);
@@ -1669,13 +1616,14 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
           best_qii=qii;
         }
       }
+#endif
       if(_skip_ssd[bi]<(UINT_MAX>>OC_BIT_SCALE+2)){
         cur_ssd=_skip_ssd[bi]<<OC_BIT_SCALE;
         cur_cost=OC_MODE_RD_COST(ssd+cur_ssd,rate,lambda);
         if(cur_cost<=best_cost){
           best_ssd=cur_ssd;
           best_rate=0;
-          best_qii+=4;
+          best_qii|=4;
         }
       }
       rate+=best_rate;
@@ -1723,11 +1671,11 @@ static void oc_skip_cost(oc_enc_ctx *_enc,oc_enc_pipeline_state *_pipe,
 
 static void oc_cost_intra(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,const oc_fr_state *_fr,const oc_qii_state *_qs,
- const unsigned _frag_satd[12],const unsigned _skip_ssd[12],
+ const oc_dct_cost_table *_dct,const unsigned _skip_ssd[12],
  const unsigned _rd_scale[5]){
-  oc_analyze_mb_mode_luma(_enc,_modec,_fr,_qs,_frag_satd,_skip_ssd,_rd_scale,0);
+  oc_analyze_mb_mode_luma(_enc,_modec,_fr,_qs,_dct,_skip_ssd,_rd_scale,0);
   oc_analyze_mb_mode_chroma(_enc,_modec,_fr,_qs,
-   _frag_satd,_skip_ssd,_rd_scale[4],0);
+   _dct,_skip_ssd,_rd_scale[4],0);
   _modec->overhead=
    oc_mode_scheme_chooser_cost(&_enc->chooser,OC_MODE_INTRA)<<OC_BIT_SCALE;
   oc_mode_set_cost(_modec,_enc->lambda);
@@ -1736,11 +1684,11 @@ static void oc_cost_intra(oc_enc_ctx *_enc,oc_mode_choice *_modec,
 static void oc_cost_inter(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,int _mb_mode,oc_mv _mv,
  const oc_fr_state *_fr,const oc_qii_state *_qs,
- const unsigned _skip_ssd[12],const unsigned _rd_scale[5],const unsigned _frag_satd[12]){
+ const unsigned _skip_ssd[12],const unsigned _rd_scale[5],const oc_dct_cost_table *_dct){
   _modec->rate=_modec->ssd=0;
-  oc_analyze_mb_mode_luma(_enc,_modec,_fr,_qs,_frag_satd,_skip_ssd,_rd_scale,1);
+  oc_analyze_mb_mode_luma(_enc,_modec,_fr,_qs,_dct,_skip_ssd,_rd_scale,1);
   oc_analyze_mb_mode_chroma(_enc,_modec,_fr,_qs,
-   _frag_satd,_skip_ssd,_rd_scale[4],1);
+   _dct,_skip_ssd,_rd_scale[4],1);
   _modec->overhead=
    oc_mode_scheme_chooser_cost(&_enc->chooser,_mb_mode)<<OC_BIT_SCALE;
   oc_mode_set_cost(_modec,_enc->lambda);
@@ -1748,16 +1696,16 @@ static void oc_cost_inter(oc_enc_ctx *_enc,oc_mode_choice *_modec,
 
 static void oc_cost_inter_nomv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,int _mb_mode,const oc_fr_state *_fr,const oc_qii_state *_qs,
- const unsigned _skip_ssd[12],const unsigned _rd_scale[4],const unsigned _frag_satd[12]){
-  oc_cost_inter(_enc,_modec,_mbi,_mb_mode,0,_fr,_qs,_skip_ssd,_rd_scale,_frag_satd);
+ const unsigned _skip_ssd[12],const unsigned _rd_scale[4],const oc_dct_cost_table *_dct){
+  oc_cost_inter(_enc,_modec,_mbi,_mb_mode,0,_fr,_qs,_skip_ssd,_rd_scale,_dct);
 }
 
 static int oc_cost_inter1mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,int _mb_mode,oc_mv _mv,
  const oc_fr_state *_fr,const oc_qii_state *_qs,const unsigned _skip_ssd[12],
- const unsigned _rd_scale[4],const unsigned _frag_satd[12]){
+ const unsigned _rd_scale[4],const oc_dct_cost_table *_dct){
   int bits0;
-  oc_cost_inter(_enc,_modec,_mbi,_mb_mode,_mv,_fr,_qs,_skip_ssd,_rd_scale,_frag_satd);
+  oc_cost_inter(_enc,_modec,_mbi,_mb_mode,_mv,_fr,_qs,_skip_ssd,_rd_scale,_dct);
   bits0=OC_MV_BITS[0][OC_MV_X(_mv)+31]+OC_MV_BITS[0][OC_MV_Y(_mv)+31];
   _modec->overhead+=OC_MINI(_enc->mv_bits[0]+bits0,_enc->mv_bits[1]+12)
    -OC_MINI(_enc->mv_bits[0],_enc->mv_bits[1])<<OC_BIT_SCALE;
@@ -1773,7 +1721,7 @@ static const unsigned char OC_MB_PHASE[4][4]={
 static void oc_cost_inter4mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
  unsigned _mbi,oc_mv _mv[4],const oc_fr_state *_fr,const oc_qii_state *_qs,
  const unsigned _skip_ssd[12],const unsigned _rd_scale[5]){
-  unsigned               frag_satd[12];
+  oc_dct_cost_table      dct_cost;
   oc_mv                  lbmvs[4];
   oc_mv                  cbmvs[4];
   const unsigned char   *src;
@@ -1796,6 +1744,7 @@ static void oc_cost_inter4mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
   int                    bits1;
   unsigned               satd;
   int                    dc;
+  nqis=_enc->state.nqis;
   src=_enc->state.ref_frame_data[OC_FRAME_IO];
   ref=_enc->state.ref_frame_data[OC_FRAME_PREV];
   ystride=_enc->state.ref_ystride[0];
@@ -1812,19 +1761,20 @@ static void oc_cost_inter4mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
     if(oc_state_get_mv_offsets(&_enc->state,mv_offs,0,_mv[bi])>1){
       satd=oc_enc_frag_satd2(_enc,&dc,src+frag_offs,
        ref+frag_offs+mv_offs[0],ref+frag_offs+mv_offs[1],ystride);
+      satd+=abs(dc);
     }
     else{
       satd=oc_enc_frag_satd(_enc,&dc,src+frag_offs,
        ref+frag_offs+mv_offs[0],ystride);
+      satd+=abs(dc);
     }
-    frag_satd[OC_MB_PHASE[_mbi&3][bi]]=satd+abs(dc);
+    oc_cost_dct_fill(_enc, nqis, 1, 0, OC_MB_PHASE[_mbi&3][bi], satd, OC_SATD_SHIFT, &dct_cost);
   }
-  oc_analyze_mb_mode_luma(_enc,_modec,_fr,_qs,frag_satd,
+  oc_analyze_mb_mode_luma(_enc,_modec,_fr,_qs,&dct_cost,
    _enc->vp3_compatible?OC_NOSKIP:_skip_ssd,_rd_scale,1);
   /*Figure out which blocks are being skipped and give them (0,0) MVs.*/
   bits0=0;
   bits1=0;
-  nqis=_enc->state.nqis;
   for(bi=0;bi<4;bi++){
     if(_modec->qii[OC_MB_PHASE[_mbi&3][bi]]>=nqis)lbmvs[bi]=0;
     else{
@@ -1839,6 +1789,7 @@ static void oc_cost_inter4mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
   map_nidxs=OC_MB_MAP_NIDXS[_enc->state.info.pixel_fmt];
   /*Note: This assumes ref_ystride[1]==ref_ystride[2].*/
   ystride=_enc->state.ref_ystride[1];
+  nqis=1;
   for(mapii=4;mapii<map_nidxs;mapii++){
     mapi=map_idxs[mapii];
     pli=mapi>>2;
@@ -1850,15 +1801,17 @@ static void oc_cost_inter4mv(oc_enc_ctx *_enc,oc_mode_choice *_modec,
     if(oc_state_get_mv_offsets(&_enc->state,mv_offs,pli,cbmvs[bi])>1){
       satd=oc_enc_frag_satd2(_enc,&dc,src+frag_offs,
        ref+frag_offs+mv_offs[0],ref+frag_offs+mv_offs[1],ystride);
+      satd+=abs(dc);
     }
     else{
       satd=oc_enc_frag_satd(_enc,&dc,src+frag_offs,
        ref+frag_offs+mv_offs[0],ystride);
+      satd+=abs(dc);
     }
-    frag_satd[mapii]=satd+abs(dc);
+    oc_cost_dct_fill(_enc, nqis, 1, pli, mapii, satd, OC_SATD_SHIFT, &dct_cost);
   }
   oc_analyze_mb_mode_chroma(_enc,_modec,_fr,_qs,
-   frag_satd,_skip_ssd,_rd_scale[4],1);
+   &dct_cost,_skip_ssd,_rd_scale[4],1);
   _modec->overhead=
    oc_mode_scheme_chooser_cost(&_enc->chooser,OC_MODE_INTER_MV_FOUR)
    +OC_MINI(_enc->mv_bits[0]+bits0,_enc->mv_bits[1]+bits1)
@@ -1949,9 +1902,9 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         unsigned      *rd_scale;
         unsigned      *rd_iscale;
         unsigned      *skip_ssd;
-        unsigned      *intra_satd;
-        unsigned      *i0mv_satd;
-        unsigned      *g0mv_satd;
+        oc_dct_cost_table *intra_dct;
+        oc_dct_cost_table *i0mv_dct;
+        oc_dct_cost_table *g0mv_dct;
         int            mb_mv_bits_0;
         int            mb_gmv_bits_0;
         int            inter_mv_pref;
@@ -1966,12 +1919,12 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         mbi=sbi<<2|quadi;
         mv=0;
         oc_enc_worker_wait(_enc, mbi);
-        oc_enc_worker_get_rd_acc(_enc, mbi, &rd_scale, &rd_iscale, &luma_sum, &activity_sum);
-        oc_enc_worker_get_nomv_satd(_enc, mbi, &skip_ssd, &intra_satd, &i0mv_satd, &g0mv_satd);
+        oc_enc_worker_get_rd_acc(_enc, mbi, &rd_scale, &rd_iscale, &intra_dct, &luma_sum, &activity_sum);
+        oc_enc_worker_get_nomv_dct(_enc, mbi, &skip_ssd, &i0mv_dct, &g0mv_dct);
         /*Estimate the cost of coding this MB in a keyframe.*/
         if(_allow_keyframe){
           oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,
-           _enc->pipe.fr+0,&intra_luma_qs,intra_satd,OC_NOSKIP,rd_scale);
+           _enc->pipe.fr+0,&intra_luma_qs,intra_dct,OC_NOSKIP,rd_scale);
           intrabits+=modes[OC_MODE_INTRA].rate;
           for(bi=0;bi<4;bi++){
             oc_qii_state_advance(&intra_luma_qs,&intra_luma_qs,
@@ -1981,33 +1934,34 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
         /*Estimate the cost in a delta frame for various modes.*/
         oc_skip_cost(_enc,&_enc->pipe,mbi,skip_ssd);
         oc_cost_intra(_enc,modes+OC_MODE_INTRA,mbi,
-         _enc->pipe.fr+0,_enc->pipe.qs+0,intra_satd,skip_ssd,rd_scale);
+         _enc->pipe.fr+0,_enc->pipe.qs+0,intra_dct,skip_ssd,rd_scale);
         oc_cost_inter_nomv(_enc,modes+OC_MODE_INTER_NOMV,mbi,
          OC_MODE_INTER_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-         skip_ssd,rd_scale,i0mv_satd);
+         skip_ssd,rd_scale,i0mv_dct);
         oc_cost_inter_nomv(_enc,modes+OC_MODE_GOLDEN_NOMV,mbi,
          OC_MODE_GOLDEN_NOMV,_enc->pipe.fr+0,_enc->pipe.qs+0,
-         skip_ssd,rd_scale,g0mv_satd);
+         skip_ssd,rd_scale,g0mv_dct);
 
         if(sp_level<OC_SP_LEVEL_NOMC){
-          unsigned frag_satd[12];
-          unsigned *mv_satd;
-          oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_INTER_MV, 0, &mv_satd);
+          oc_dct_cost_table frag_dct;
+          oc_dct_cost_table *mv_dct;
+
+          oc_enc_worker_get_mv_dct(_enc, mbi, OC_MODE_INTER_MV, 0, &mv_dct);
           mb_mv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_INTER_MV,mbi,
            OC_MODE_INTER_MV,embs[mbi].unref_mv[OC_FRAME_PREV],
-           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
-          oc_cost_inter_satd(_enc,mbi,OC_MODE_INTER_MV_LAST,last_mv,frag_satd);
+           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_dct);
+          oc_cost_inter_dct(_enc,mbi,OC_MODE_INTER_MV_LAST,last_mv,&frag_dct);
           oc_cost_inter(_enc,modes+OC_MODE_INTER_MV_LAST,mbi,
            OC_MODE_INTER_MV_LAST,last_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
-           skip_ssd,rd_scale,frag_satd);
-          oc_cost_inter_satd(_enc,mbi,OC_MODE_INTER_MV_LAST2,prior_mv,frag_satd);
+           skip_ssd,rd_scale,&frag_dct);
+          oc_cost_inter_dct(_enc,mbi,OC_MODE_INTER_MV_LAST2,prior_mv,&frag_dct);
           oc_cost_inter(_enc,modes+OC_MODE_INTER_MV_LAST2,mbi,
            OC_MODE_INTER_MV_LAST2,prior_mv,_enc->pipe.fr+0,_enc->pipe.qs+0,
-           skip_ssd,rd_scale,frag_satd);
-          oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_GOLDEN_MV, 0, &mv_satd);
+           skip_ssd,rd_scale,&frag_dct);
+          oc_enc_worker_get_mv_dct(_enc, mbi, OC_MODE_GOLDEN_MV, 0, &mv_dct);
           mb_gmv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_GOLDEN_MV,mbi,
            OC_MODE_GOLDEN_MV,embs[mbi].unref_mv[OC_FRAME_GOLD],
-           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
+           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_dct);
           /*The explicit MV modes (2,6,7) have not yet gone through halfpel
              refinement.
             We choose the explicit MV mode that's already furthest ahead on
@@ -2035,15 +1989,15 @@ int oc_enc_analyze_inter(oc_enc_ctx *_enc,int _allow_keyframe,int _recode){
           }
           else if(modes[OC_MODE_GOLDEN_MV].cost+inter_mv_pref<
                   modes[OC_MODE_INTER_MV].cost){
-            oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_GOLDEN_MV, 1, &mv_satd);
+            oc_enc_worker_get_mv_dct(_enc, mbi, OC_MODE_GOLDEN_MV, 1, &mv_dct);
             mb_gmv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_GOLDEN_MV,mbi,
                                            OC_MODE_GOLDEN_MV,embs[mbi].analysis_mv[0][OC_FRAME_GOLD],
-                                           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
+                                           _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_dct);
           }
-          oc_enc_worker_get_mv_satd(_enc, mbi, OC_MODE_INTER_MV, 1, &mv_satd);
+          oc_enc_worker_get_mv_dct(_enc, mbi, OC_MODE_INTER_MV, 1, &mv_dct);
           mb_mv_bits_0=oc_cost_inter1mv(_enc,modes+OC_MODE_INTER_MV,mbi,
                                         OC_MODE_INTER_MV,embs[mbi].analysis_mv[0][OC_FRAME_PREV],
-                                        _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_satd);
+                                        _enc->pipe.fr+0,_enc->pipe.qs+0,skip_ssd,rd_scale,mv_dct);
           /*Finally, pick the mode with the cheapest estimated R-D cost.*/
           mb_mode=OC_MODE_INTER_NOMV;
           if(modes[OC_MODE_INTRA].cost<modes[OC_MODE_INTER_NOMV].cost){
