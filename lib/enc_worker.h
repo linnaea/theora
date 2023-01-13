@@ -24,4 +24,17 @@ void oc_enc_worker_get_nomv_dct(oc_enc_ctx *_enc, unsigned mbi, unsigned **skip_
 
 void oc_enc_worker_get_mv_dct(oc_enc_ctx *enc, unsigned mbi, int which, int refined, oc_dct_cost_table **dct);
 
+#ifdef DEBUG
+#include <assert.h>
+#define oc_assume assert
+#elif defined(_MSC_VER)
+#define oc_assume(x) __assume(x)
+#elif defined(__clang__)
+#define oc_assume(x) __builtin_assume(x)
+#elif defined(__GNUC__)
+#define oc_assume(x) if(!(x)) __builtin_unreachable()
+#else
+#define oc_assume(x) ((void)0)
+#endif
+
 #endif //THEORA_ENC_WORKER_H

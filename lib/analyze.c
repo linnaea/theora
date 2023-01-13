@@ -207,9 +207,15 @@ static void oc_mode_scheme_chooser_update(oc_mode_scheme_chooser *_chooser,
 /*The number of bits required to encode a super block run.
   _run_count: The desired run count; must be positive and less than 4130.*/
 static int oc_sb_run_bits(int _run_count){
-  int i;
-  for(i=0;_run_count>=OC_SB_RUN_VAL_MIN[i+1];i++);
-  return OC_SB_RUN_CODE_NBITS[i];
+  oc_assume(_run_count > 0 && _run_count < 4130);
+  if(_run_count == 1) return 0;
+  _run_count -= 2;
+  int n = 0;
+  do {
+    _run_count>>=1;
+    n++;
+  } while(_run_count && n <= 5);
+  return OC_SB_RUN_CODE_NBITS[n];
 }
 
 /*The number of bits required to encode a block run.
@@ -1218,7 +1224,6 @@ static void oc_analyze_intra_mb_chroma(oc_enc_ctx *_enc,
   oc_fragment         *frags;
   const unsigned char *map_idxs;
   const oc_mb_map_plane *mb_map;
-  oc_qii_state         qt[3];
   int                  qii;
   int                  lambda;
   int                  nqis;
@@ -1248,10 +1253,11 @@ static void oc_analyze_intra_mb_chroma(oc_enc_ctx *_enc,
         unsigned cur_cost;
         unsigned cur_rate;
         unsigned cur_ssd;
-        oc_qii_state_advance(qt+qii,&_qs[pli],qii);
+        oc_qii_state qt;
+        oc_qii_state_advance(&qt,&_qs[pli],qii);
         cur_ssd=_dct->block[bi][qii].ssd;
         cur_rate=_dct->block[bi][qii].cost
-                 +(qt[qii].bits-_qs[pli].bits<<OC_BIT_SCALE);
+                 +(qt.bits-_qs[pli].bits<<OC_BIT_SCALE);
         cur_ssd=OC_RD_SCALE(cur_ssd,_rd_scale);
         cur_cost=OC_MODE_RD_COST(cur_ssd,cur_rate,lambda);
         if(cur_cost<best_cost){
@@ -1259,6 +1265,11 @@ static void oc_analyze_intra_mb_chroma(oc_enc_ctx *_enc,
           best_qii=qii;
         }
       }
+#else
+      (void)best_cost;
+      (void)lambda;
+      (void)nqis;
+      (void)qii;
 #endif
       frags[mb_map[pli][map_idxs[bi]&3]].qii=best_qii;
     }
@@ -1568,12 +1579,6 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
  unsigned _rd_scale,int _qti){
   unsigned ssd;
   unsigned rate;
-  unsigned best_ssd;
-  unsigned best_rate;
-  int      best_qii;
-  unsigned cur_cost;
-  unsigned cur_ssd;
-  unsigned cur_rate;
   int      lambda;
   int      nblocks;
   int      nqis;
@@ -1592,6 +1597,12 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
   for(pli=1;pli<3;pli++){
     for(;bi<nblocks;bi++){
       unsigned best_cost;
+      unsigned best_ssd;
+      unsigned best_rate;
+      int      best_qii;
+      unsigned cur_cost;
+      unsigned cur_ssd;
+      unsigned cur_rate;
       best_ssd=_dct->block[bi][0].ssd;
       best_rate=_dct->block[bi][0].cost
        +OC_CHROMA_QII_RATE;
@@ -1616,6 +1627,10 @@ static void oc_analyze_mb_mode_chroma(oc_enc_ctx *_enc,
           best_qii=qii;
         }
       }
+#else
+      (void)cur_rate;
+      (void)nqis;
+      (void)qii;
 #endif
       if(_skip_ssd[bi]<(UINT_MAX>>OC_BIT_SCALE+2)){
         cur_ssd=_skip_ssd[bi]<<OC_BIT_SCALE;

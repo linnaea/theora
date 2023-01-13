@@ -6,11 +6,6 @@
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
 #endif
-#ifdef DEBUG
-#include <assert.h>
-#else
-#define assert(x) ((void)0)
-#endif
 
 static void oc_cost_inter_nomv_dct(oc_enc_ctx *_enc,unsigned _mbi,int _mb_mode, oc_dct_cost_table *_dct){
   oc_cost_inter_dct(_enc,_mbi,_mb_mode,0,_dct);
@@ -876,7 +871,7 @@ void oc_enc_worker_get_rd_acc(oc_enc_ctx *enc, unsigned mbi,
   struct oc_enc_worker_ctrl *w = enc->threads;
   unsigned wmbi = w->workers ? mbi - w->mbi_start : 0;
 
-  assert(w->finished[wmbi]);
+  oc_assume(w->finished[wmbi]);
   *rd_scale = w->mbs[wmbi].rd_scale;
   *rd_iscale = w->mbs[wmbi].rd_iscale;
   *intra_dct = &w->mbs[wmbi].intra_dct;
@@ -889,8 +884,8 @@ void oc_enc_worker_get_nomv_dct(oc_enc_ctx *enc, unsigned mbi, unsigned **skip_s
   struct oc_enc_worker_ctrl *w = enc->threads;
   unsigned wmbi = w->workers ? mbi - w->mbi_start : 0;
 
-  assert(w->finished[wmbi]);
-  assert(!w->intra);
+  oc_assume(w->finished[wmbi]);
+  oc_assume(!w->intra);
   *skip_ssd = w->mbs[wmbi].skip_ssd;
   *inter_dct = &w->mbs[wmbi].i0mv_dct;
   *golden_dct = &w->mbs[wmbi].g0mv_dct;
@@ -900,8 +895,8 @@ void oc_enc_worker_get_mv_dct(oc_enc_ctx *enc, unsigned mbi, int which, int refi
   struct oc_enc_worker_ctrl *w = enc->threads;
   unsigned wmbi = w->workers ? mbi - w->mbi_start : 0;
 
-  assert(w->finished[wmbi]);
-  assert(!w->intra);
+  oc_assume(w->finished[wmbi]);
+  oc_assume(!w->intra);
 
   struct oc_enc_wmb_data *d = &w->mbs[wmbi];
   enum oc_enc_wrk_computed computed;
