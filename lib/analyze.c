@@ -208,14 +208,24 @@ static void oc_mode_scheme_chooser_update(oc_mode_scheme_chooser *_chooser,
   _run_count: The desired run count; must be positive and less than 4130.*/
 static int oc_sb_run_bits(int _run_count){
   oc_assume(_run_count > 0 && _run_count < 4130);
-  if(_run_count == 1) return 0;
+  if(_run_count == 1) return 1;
   _run_count -= 2;
+#if defined(__GNUC__) || defined(__clang__)
+  int n = 32 - __builtin_clz(_run_count|1);
+#elif defined(_MSC_VER)
+  int n;
+  _BitScanReverse(&n, _run_count|1);
+  n += 1;
+#else
   int n = 0;
   do {
     _run_count>>=1;
     n++;
   } while(_run_count && n <= 5);
-  return OC_SB_RUN_CODE_NBITS[n];
+#endif
+  if(n >= 6) return 18;
+  if(n == 1) return 3;
+  return n*2;
 }
 
 /*The number of bits required to encode a block run.

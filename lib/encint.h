@@ -262,12 +262,6 @@ extern const unsigned char OC_MODE_BITS[2][OC_NMODES];
 /*The bits used for each of the MV codebooks.*/
 extern const unsigned char OC_MV_BITS[2][64];
 
-/*The minimum value that can be stored in a SB run for each codeword.
-  The last entry is the upper bound on the length of a single SB run.*/
-extern const ogg_uint16_t  OC_SB_RUN_VAL_MIN[8];
-/*The bits used for each SB run codeword.*/
-extern const unsigned char OC_SB_RUN_CODE_NBITS[7];
-
 /*The bits used for each block run length (starting with 1).*/
 extern const unsigned char OC_BLOCK_RUN_CODE_NBITS[30];
 

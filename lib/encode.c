@@ -390,11 +390,11 @@ static const unsigned char OC_MV_CODES[2][64]={
    11110xxx                10-17
    111110xxxx              18-33
    111111xxxxxxxxxxxx      34-4129*/
-const ogg_uint16_t    OC_SB_RUN_VAL_MIN[8]={1,2,4,6,10,18,34,4130};
-static const unsigned OC_SB_RUN_CODE_PREFIX[7]={
+static const ogg_uint16_t  OC_SB_RUN_VAL_MIN[8]={1,2,4,6,10,18,34,4130};
+static const unsigned      OC_SB_RUN_CODE_PREFIX[7]={
   0,4,0xC,0x38,0xF0,0x3E0,0x3F000
 };
-const unsigned char   OC_SB_RUN_CODE_NBITS[7]={1,3,4,6,8,10,18};
+static const unsigned char OC_SB_RUN_CODE_NBITS[7]={1,3,4,6,8,10,18};
 
 
 /*Writes the bit pattern for the run length of a super block run to the given
