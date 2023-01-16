@@ -21,6 +21,8 @@ void oc_frag_recon_inter_neon(unsigned char *_dst, const unsigned char *_src,
                               int _ystride,const int16_t _residue[64]);
 void oc_frag_recon_inter2_neon(unsigned char *_dst,const unsigned char *_src1, const unsigned char *_src2,
                                int _ystride,const int16_t _residue[64]);
+void oc_state_frag_recon_neon(const oc_theora_state *_state,ptrdiff_t _fragi,
+                              int _pli,int16_t _dct_coeffs[128],int _last_zzi,uint16_t _dc_quant);
 #endif
 
 #endif //_arm_intrinsics_armfrag_H
