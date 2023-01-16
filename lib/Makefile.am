@@ -218,7 +218,7 @@ libtheoradec_la_SOURCES = \
 	Version_script-dec theoradec.exp
 libtheoradec_la_LDFLAGS = \
   -version-info @THDEC_LIB_CURRENT@:@THDEC_LIB_REVISION@:@THDEC_LIB_AGE@ \
-  @THEORADEC_LDFLAGS@ @CAIRO_LIBS@ \
+  @THEORADEC_LDFLAGS@ @CAIRO_LIBS@ @PTHREAD_LIBS@ \
   -no-undefined
 
 libtheoraenc_la_SOURCES = \
@@ -235,7 +235,7 @@ libtheora_la_SOURCES = \
 	Version_script theora.exp
 libtheora_la_LDFLAGS = \
   -version-info @TH_LIB_CURRENT@:@TH_LIB_REVISION@:@TH_LIB_AGE@ \
-  @THEORA_LDFLAGS@ @CAIRO_LIBS@ $(OGG_LIBS) \
+  @THEORA_LDFLAGS@ @CAIRO_LIBS@ @PTHREAD_LIBS@ $(OGG_LIBS) \
   -no-undefined
 
 debug:

@@ -93,7 +93,6 @@ struct oc_dec_pipeline_state{
     Finally, keeping it off the stack means there's less likely to be a data
      hazard beween the NEON co-processor and the regular ARM core, which avoids
      unnecessary stalls.*/
-  OC_ALIGN16(ogg_int16_t dct_coeffs[128]);
   OC_ALIGN16(signed char bounding_values[256]);
   ptrdiff_t           ti[3][64];
   ptrdiff_t           ebi[3][64];
@@ -174,6 +173,27 @@ struct th_dec_ctx{
   int                    telemetry_dc_bytes;
   unsigned char         *telemetry_frame_data;
 # endif
+
+#ifdef HAVE_PTHREAD
+  pthread_barrier_t dec_plane_start;
+  pthread_barrier_t dec_plane_end;
+  int               dec_plane_stop;
+#endif
+
+  struct oc_decode_plane_state {
+    th_dec_ctx *dec;
+    int pli;
+    int refi;
+    int stripe_fragy;
+    int notstart;
+    int notdone;
+    int avail_fragy0;
+    int avail_fragy_end;
+    OC_ALIGN16(ogg_int16_t dct_coeffs[128]);
+#ifdef HAVE_PTHREAD
+    pthread_t thread;
+#endif
+  } dec_planes[3];
 };
 
 /*Default pure-C implementations of decoder-specific accelerated functions.*/

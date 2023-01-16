@@ -26,6 +26,10 @@
 #if defined(HAVE_CAIRO)
 # include <cairo.h>
 #endif
+#ifdef HAVE_PTHREAD
+#include <pthread.h>
+static void *oc_decode_thread(void *_state);
+#endif
 
 
 /*No post-processing.*/
@@ -423,10 +427,32 @@ static int oc_dec_init(oc_dec_ctx *_dec,const th_info *_info,
   _dec->telemetry_mv=0;
   _dec->telemetry_frame_data=NULL;
 #endif
+#ifdef HAVE_PTHREAD
+  pthread_barrier_init(&_dec->dec_plane_start, NULL, 3);
+  pthread_barrier_init(&_dec->dec_plane_end, NULL, 3);
+  _dec->dec_plane_stop = 0;
+#endif
+  for(pli=0;pli<3;pli++) {
+    _dec->dec_planes[pli].pli = pli;
+    _dec->dec_planes[pli].dec = _dec;
+    memset(_dec->dec_planes[pli].dct_coeffs, 0, sizeof(_dec->dec_planes[pli].dct_coeffs));
+#ifdef HAVE_PTHREAD
+    if(pli) pthread_create(&_dec->dec_planes[pli].thread, NULL, oc_decode_thread, &_dec->dec_planes[pli]);
+#endif
+  }
   return 0;
 }
 
 static void oc_dec_clear(oc_dec_ctx *_dec){
+#ifdef HAVE_PTHREAD
+  int pli;
+  _dec->dec_plane_stop = 1;
+  pthread_barrier_wait(&_dec->dec_plane_start);
+  for(pli=1;pli<3;pli++)
+    pthread_join(_dec->dec_planes[pli].thread, NULL);
+  pthread_barrier_destroy(&_dec->dec_plane_start);
+  pthread_barrier_destroy(&_dec->dec_plane_end);
+#endif
 #if defined(HAVE_CAIRO)
   _ogg_free(_dec->telemetry_frame_data);
 #endif
@@ -1334,7 +1360,6 @@ static void oc_dec_pipeline_init(oc_dec_ctx *_dec,
   int              pli;
   int              qii;
   int              qti;
-  int              zzi;
   /*If chroma is sub-sampled in the vertical direction, we have to decode two
      super block rows of Y' for each super block row of Cb and Cr.*/
   _pipe->mcu_nvfrags=4<<!(_dec->state.info.pixel_fmt&2);
@@ -1381,8 +1406,6 @@ static void oc_dec_pipeline_init(oc_dec_ctx *_dec,
      _dec->state.ref_frame_bufs[_dec->state.ref_frame_idx[OC_FRAME_SELF]],
      sizeof(_dec->pp_frame_buf[0])*3);
   }
-  /*Clear down the DCT coefficient buffer for the first block.*/
-  for(zzi=0;zzi<64;zzi++)_pipe->dct_coeffs[zzi]=0;
 }
 
 /*Undo the DC prediction in a single plane of an MCU (one or two super block
@@ -1509,7 +1532,7 @@ void oc_dec_dc_unpredict_mcu_plane_c(oc_dec_ctx *_dec,
    in, along with initial token offsets, extra bits offsets, and EOB run
    counts.*/
 static void oc_dec_frags_recon_mcu_plane(oc_dec_ctx *_dec,
- oc_dec_pipeline_state *_pipe,int _pli){
+ oc_dec_pipeline_state *_pipe,int _pli,ogg_int16_t dct_coeffs[128]){
   unsigned char       *dct_tokens;
   const unsigned char *dct_fzig_zag;
   ogg_uint16_t         dc_quant[2];
@@ -1570,7 +1593,7 @@ static void oc_dec_frags_recon_mcu_plane(oc_dec_ctx *_dec,
         eob_runs[zzi]=eob;
         ti[zzi]=lti;
         zzi+=rlen;
-        _pipe->dct_coeffs[dct_fzig_zag[zzi]]=
+        dct_coeffs[dct_fzig_zag[zzi]]=
          (ogg_int16_t)(coeff*(int)ac_quant[zzi]);
         zzi+=!eob;
       }
@@ -1578,11 +1601,11 @@ static void oc_dec_frags_recon_mcu_plane(oc_dec_ctx *_dec,
     /*TODO: zzi should be exactly 64 here.
       If it's not, we should report some kind of warning.*/
     zzi=OC_MINI(zzi,64);
-    _pipe->dct_coeffs[0]=(ogg_int16_t)frags[fragi].dc;
+    dct_coeffs[0]=(ogg_int16_t)frags[fragi].dc;
     /*last_zzi is always initialized.
       If your compiler thinks otherwise, it is dumb.*/
     oc_state_frag_recon(&_dec->state,fragi,_pli,
-     _pipe->dct_coeffs,last_zzi,dc_quant[qti]);
+     dct_coeffs,last_zzi,dc_quant[qti]);
   }
   _pipe->coded_fragis[_pli]+=ncoded_fragis;
   /*Right now the reconstructed MCU has only the coded blocks in it.*/
@@ -2737,6 +2760,88 @@ static void oc_render_telemetry(th_dec_ctx *_dec,th_ycbcr_buffer _ycbcr,
 }
 #endif
 
+static void oc_decode_plane(struct oc_decode_plane_state *st) {
+  oc_fragment_plane *fplane;
+  int                frag_shift;
+  int                pp_offset;
+  int                sdelay;
+  int                edelay;
+  th_dec_ctx        *_dec = st->dec;
+  int                pli = st->pli;
+  int                refi = st->refi;
+  int                notdone = st->notdone;
+  int                notstart = st->notstart;
+  int                stripe_fragy = st->stripe_fragy;
+  fplane=_dec->state.fplanes+pli;
+  /*Compute the first and last fragment row of the current MCU for this
+     plane.*/
+  frag_shift=pli!=0&&!(_dec->state.info.pixel_fmt&2);
+  _dec->pipe.fragy0[pli]=stripe_fragy>>frag_shift;
+  _dec->pipe.fragy_end[pli]=OC_MINI(fplane->nvfrags,
+   _dec->pipe.fragy0[pli]+(_dec->pipe.mcu_nvfrags>>frag_shift));
+  oc_dec_dc_unpredict_mcu_plane(_dec,&_dec->pipe,pli);
+  oc_dec_frags_recon_mcu_plane(_dec,&_dec->pipe,pli,st->dct_coeffs);
+  sdelay=edelay=0;
+  if(_dec->pipe.loop_filter){
+    sdelay+=notstart;
+    edelay+=notdone;
+    oc_state_loop_filter_frag_rows(&_dec->state,
+     _dec->pipe.bounding_values,OC_FRAME_SELF,pli,
+     _dec->pipe.fragy0[pli]-sdelay,_dec->pipe.fragy_end[pli]-edelay);
+  }
+  /*To fill the borders, we have an additional two pixel delay, since a
+     fragment in the next row could filter its top edge, using two pixels
+     from a fragment in this row.
+    But there's no reason to delay a full fragment between the two.*/
+  oc_state_borders_fill_rows(&_dec->state,refi,pli,
+   (_dec->pipe.fragy0[pli]-sdelay<<3)-(sdelay<<1),
+   (_dec->pipe.fragy_end[pli]-edelay<<3)-(edelay<<1));
+  /*Out-of-loop post-processing.*/
+  pp_offset=3*(pli!=0);
+  if(_dec->pipe.pp_level>=OC_PP_LEVEL_DEBLOCKY+pp_offset){
+    /*Perform de-blocking in one plane.*/
+    sdelay+=notstart;
+    edelay+=notdone;
+    oc_dec_deblock_frag_rows(_dec,_dec->pp_frame_buf,
+     _dec->state.ref_frame_bufs[refi],pli,
+     _dec->pipe.fragy0[pli]-sdelay,_dec->pipe.fragy_end[pli]-edelay);
+    if(_dec->pipe.pp_level>=OC_PP_LEVEL_DERINGY+pp_offset){
+      /*Perform de-ringing in one plane.*/
+      sdelay+=notstart;
+      edelay+=notdone;
+      oc_dec_dering_frag_rows(_dec,_dec->pp_frame_buf,pli,
+       _dec->pipe.fragy0[pli]-sdelay,_dec->pipe.fragy_end[pli]-edelay);
+    }
+  }
+  /*If no post-processing is done, we still need to delay a row for the
+     loop filter, thanks to the strange filtering order VP3 chose.*/
+  else if(_dec->pipe.loop_filter){
+    sdelay+=notstart;
+    edelay+=notdone;
+  }
+  /*Compute the intersection of the available rows in all planes.
+    If chroma is sub-sampled, the effect of each of its delays is
+     doubled, but luma might have more post-processing filters enabled
+     than chroma, so we don't know up front which one is the limiting
+     factor.*/
+  st->avail_fragy0=_dec->pipe.fragy0[pli]-sdelay<<frag_shift;
+  st->avail_fragy_end=_dec->pipe.fragy_end[pli]-edelay<<frag_shift;
+}
+
+#ifdef HAVE_PTHREAD
+static void *oc_decode_thread(void *_state) {
+  struct oc_decode_plane_state *state = _state;
+  while(1) {
+    pthread_barrier_wait(&state->dec->dec_plane_start);
+    if(state->dec->dec_plane_stop) break;
+    oc_decode_plane(state);
+    pthread_barrier_wait(&state->dec->dec_plane_end);
+  }
+
+  return NULL;
+}
+#endif
+
 int th_decode_packetin(th_dec_ctx *_dec,const ogg_packet *_op,
  ogg_int64_t *_granpos){
   int ret;
@@ -2855,73 +2960,30 @@ int th_decode_packetin(th_dec_ctx *_dec,const ogg_packet *_op,
     oc_ycbcr_buffer_flip(stripe_buf,_dec->pp_frame_buf);
     notstart=0;
     notdone=1;
+    for(pli=0;pli<3;pli++)
+      _dec->dec_planes[pli].refi=refi;
+
     for(stripe_fragy=0;notdone;stripe_fragy+=_dec->pipe.mcu_nvfrags){
       int avail_fragy0;
       int avail_fragy_end;
       avail_fragy0=avail_fragy_end=_dec->state.fplanes[0].nvfrags;
       notdone=stripe_fragy+_dec->pipe.mcu_nvfrags<avail_fragy_end;
       for(pli=0;pli<3;pli++){
-        oc_fragment_plane *fplane;
-        int                frag_shift;
-        int                pp_offset;
-        int                sdelay;
-        int                edelay;
-        fplane=_dec->state.fplanes+pli;
-        /*Compute the first and last fragment row of the current MCU for this
-           plane.*/
-        frag_shift=pli!=0&&!(_dec->state.info.pixel_fmt&2);
-        _dec->pipe.fragy0[pli]=stripe_fragy>>frag_shift;
-        _dec->pipe.fragy_end[pli]=OC_MINI(fplane->nvfrags,
-         _dec->pipe.fragy0[pli]+(_dec->pipe.mcu_nvfrags>>frag_shift));
-        oc_dec_dc_unpredict_mcu_plane(_dec,&_dec->pipe,pli);
-        oc_dec_frags_recon_mcu_plane(_dec,&_dec->pipe,pli);
-        sdelay=edelay=0;
-        if(_dec->pipe.loop_filter){
-          sdelay+=notstart;
-          edelay+=notdone;
-          oc_state_loop_filter_frag_rows(&_dec->state,
-           _dec->pipe.bounding_values,OC_FRAME_SELF,pli,
-           _dec->pipe.fragy0[pli]-sdelay,_dec->pipe.fragy_end[pli]-edelay);
-        }
-        /*To fill the borders, we have an additional two pixel delay, since a
-           fragment in the next row could filter its top edge, using two pixels
-           from a fragment in this row.
-          But there's no reason to delay a full fragment between the two.*/
-        oc_state_borders_fill_rows(&_dec->state,refi,pli,
-         (_dec->pipe.fragy0[pli]-sdelay<<3)-(sdelay<<1),
-         (_dec->pipe.fragy_end[pli]-edelay<<3)-(edelay<<1));
-        /*Out-of-loop post-processing.*/
-        pp_offset=3*(pli!=0);
-        if(_dec->pipe.pp_level>=OC_PP_LEVEL_DEBLOCKY+pp_offset){
-          /*Perform de-blocking in one plane.*/
-          sdelay+=notstart;
-          edelay+=notdone;
-          oc_dec_deblock_frag_rows(_dec,_dec->pp_frame_buf,
-           _dec->state.ref_frame_bufs[refi],pli,
-           _dec->pipe.fragy0[pli]-sdelay,_dec->pipe.fragy_end[pli]-edelay);
-          if(_dec->pipe.pp_level>=OC_PP_LEVEL_DERINGY+pp_offset){
-            /*Perform de-ringing in one plane.*/
-            sdelay+=notstart;
-            edelay+=notdone;
-            oc_dec_dering_frag_rows(_dec,_dec->pp_frame_buf,pli,
-             _dec->pipe.fragy0[pli]-sdelay,_dec->pipe.fragy_end[pli]-edelay);
-          }
-        }
-        /*If no post-processing is done, we still need to delay a row for the
-           loop filter, thanks to the strange filtering order VP3 chose.*/
-        else if(_dec->pipe.loop_filter){
-          sdelay+=notstart;
-          edelay+=notdone;
-        }
-        /*Compute the intersection of the available rows in all planes.
-          If chroma is sub-sampled, the effect of each of its delays is
-           doubled, but luma might have more post-processing filters enabled
-           than chroma, so we don't know up front which one is the limiting
-           factor.*/
-        avail_fragy0=OC_MINI(avail_fragy0,
-         _dec->pipe.fragy0[pli]-sdelay<<frag_shift);
-        avail_fragy_end=OC_MINI(avail_fragy_end,
-         _dec->pipe.fragy_end[pli]-edelay<<frag_shift);
+        _dec->dec_planes[pli].stripe_fragy=stripe_fragy;
+        _dec->dec_planes[pli].notstart=notstart;
+        _dec->dec_planes[pli].notdone=notdone;
+      }
+#ifdef HAVE_PTHREAD
+      pthread_barrier_wait(&_dec->dec_plane_start);
+      oc_decode_plane(&_dec->dec_planes[0]);
+      pthread_barrier_wait(&_dec->dec_plane_end);
+#else
+      for(pli=0;pli<3;pli++)
+        oc_decode_plane(&_dec->dec_planes[pli]);
+#endif
+      for(pli=0;pli<3;pli++){
+        avail_fragy0=OC_MINI(avail_fragy0,_dec->dec_planes[pli].avail_fragy0);
+        avail_fragy_end=OC_MINI(avail_fragy_end,_dec->dec_planes[pli].avail_fragy_end);
       }
 #ifdef HAVE_CAIRO
       if(_dec->stripe_cb.stripe_decoded!=NULL&&!telemetry){

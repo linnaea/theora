@@ -367,6 +367,16 @@ then
   XIPH_PATH_VORBIS(HAVE_VORBIS=yes, HAVE_VORBIS=no)
 fi
 
+dnl check for libpthread
+PTHREAD_LIBS=''
+AC_CHECK_LIB([pthread], [pthread_barrier_init], [
+  AC_CHECK_DECLS([pthread_create], [
+    PTHREAD_LIBS='-lpthread'
+    AC_DEFINE([HAVE_PTHREAD], [],  [has POSIX threads])
+  ], [], [[#include <pthread.h>]])
+])
+AC_SUBST(PTHREAD_LIBS)
+
 dnl check for SDL
 HAVE_SDL=no
 if test "x$HAVE_PKG_CONFIG" = "xyes"
