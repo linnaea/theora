@@ -6,13 +6,12 @@
  * IN 'COPYING'. PLEASE READ THESE TERMS BEFORE DISTRIBUTING.       *
  *                                                                  *
  * THE Theora SOURCE CODE IS COPYRIGHT (C) 2002-2004                *
- * by the Xiph.Org Foundation http://www.xiph.org/                  *
+ * by the Xiph.Org Foundation https://www.xiph.org/                  *
  *                                                                  *
  ********************************************************************
 
   function: example encoder application; makes an Ogg Theora/Vorbis
             file from YUV4MPEG2 and WAV input
-  last mod: $Id: transcoder_example.c,v 1.4 2004/03/20 00:14:04 tterribe Exp $
 
  ********************************************************************/
 
@@ -133,7 +132,7 @@ static void usage(void){
           "                              fidelity; 10 yields highest fidelity\n"
           "                              but large files. '2' is a reasonable\n"
           "                              default).\n\n"
-          "   -v --video-quality <n>     Theora quality selector fro 0 to 10\n"
+          "   -v --video-quality <n>     Theora quality selector from 0 to 10\n"
           "                              (0 yields smallest files but lowest\n"
           "                              video quality. 10 yields highest\n"
           "                              fidelity but large files).\n\n"
@@ -708,7 +707,7 @@ int main(int argc,char *argv[]){
   /* yayness.  Set up Ogg output stream */
   srand(time(NULL));
   ogg_stream_init(&vo,rand());
-  ogg_stream_init(&to,rand()); /* oops, add one ot the above */
+  ogg_stream_init(&to,rand()); /* oops, add one to the above */
 
   /* Set up Theora encoder */
   if(!video){

@@ -5,13 +5,13 @@
  * GOVERNED BY A BSD-STYLE SOURCE LICENSE INCLUDED WITH THIS SOURCE *
  * IN 'COPYING'. PLEASE READ THESE TERMS BEFORE DISTRIBUTING.       *
  *                                                                  *
- * THE Theora SOURCE CODE IS COPYRIGHT (C) 2002-2009                *
- * by the Xiph.Org Foundation and contributors http://www.xiph.org/ *
+ * THE Theora SOURCE CODE IS COPYRIGHT (C) 2002-2009,2025           *
+ * by the Xiph.Org Foundation and contributors                      *
+ * https://www.xiph.org/                                            *
  *                                                                  *
  ********************************************************************
 
   function:
-    last mod: $Id$
 
  ********************************************************************/
 
@@ -225,6 +225,7 @@ int oc_huff_tree_unpack(oc_pack_buf *_opb,unsigned char _tokens[256][2]){
         _tokens[ntokens][1]=(unsigned char)(len+neb);
         ntokens++;
       }
+      if(len<=0)break;
       code_bit=0x80000000U>>len-1;
       while(len>0&&(code&code_bit)){
         code^=code_bit;

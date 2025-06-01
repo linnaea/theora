@@ -244,6 +244,6 @@ debug:
 profile:
 	$(MAKE) all CFLAGS="@PROFILE@"
 
-# contstruct various symbol export list files
+# construct various symbol export list files
 .def.exp : defexp.awk
 	awk -f defexp.awk $< > $@
